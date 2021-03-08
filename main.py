@@ -147,15 +147,16 @@ async def _redeemCode(ctx, name: str):
         required = False
     )]
 )
-async def _viewLeaderboard(ctx, page: typing.Optional[int] = 0):
+async def _viewLeaderboard(ctx, page: typing.Optional[int] = 1):
     await ctx.respond()
     
     dfcpy = df[['Tag', 'Points']].copy()
-    dfcpy.sort_values('Points')
+    dfcpy.sort_values('Points', ignore_index = True, ascending=False, inplace=True)
     em = discord.Embed(title = f'Top members by points in {ctx.guild.name}', description = 'The highest point members in the server')
-    for i in range(len(df.index)):
-        temp = dfcpy.Tag[i] + ": " + str(dfcpy.Points[i])
-        em.add_field(name = f'{i+1}: {temp}', value='\u200b', inline = False)
+    for i in range((page-1)*5, min(page*5, len(dfcpy.index))):
+        tag = dfcpy.Tag[i]
+        val = str(dfcpy.Points[i]) + " Points"
+        em.add_field(name = f'{i+1}: {tag}', value=val, inline = False)
     await ctx.send(embed = em)
 
 

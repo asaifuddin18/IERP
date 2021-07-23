@@ -16,8 +16,11 @@ client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 df = pd.read_csv("main/config/points.csv")
 used = pd.read_csv("main/config/used.csv")
-past_50_uses = []
-#print(df)
+uses_per_day = {} #Date: int (cumulative)
+unique_users_per_day = {} #Date: int (cumulative) len(slash.df.index)
+unique_codes_per_day = {} #Date: int (cumulative) len(slash.used.columns) - 1
+points_in_circulation = {} #Date: int (cumulative) slash.df['Points'].sum()
+num_redeemed = 0
 active_codes = {} #Code: points, start_time, duration
 giveaways = {} #Code: points, start_time, duration, entries, num_winners
 adminChannelID = ""
@@ -68,18 +71,16 @@ async def _test(ctx, argone: str):
     )]
 )
 async def _startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int):
-    print("hi")
     if str(ctx.channel_id) != adminChannelID:
         #await ctx.respond(eat=True)
         await ctx.send("This is an admin only command!", hidden=True)
         print(adminChannelID)
         print(ctx.channel_id)
         return
-    print("hello")
     if code in giveaways.keys():
         await ctx.send("This raffle code is already being used!")
         return
-    giveaways[code] = (cost, time.time(), duration*360, [], number_of_winners)
+    giveaways[code] = (cost, time.time(), duration*60, [], number_of_winners)
     await ctx.send("Raffle " + code + " has been started!")
 
 @slash.slash(
@@ -105,14 +106,14 @@ async def _enterRaffle(ctx, code: str):
         index = df.index[df["ID"] == ctx.author_id][0]
         points = df.Points[index]
     if cost > points:
-        await ctx.send(cost + " points are required to enter this giveaway, you only have " + points + "!")
+        await ctx.send(cost + " points are required to enter this raffle, you only have " + points + "!")
         return
     entries.append(ctx.author_id)
     if cost != 0:
         index = df.index[df["ID"] == ctx.author_id][0]
         #df.Points[index] = df.Points[index] - cost
         df.at[index, 'Points'] -= cost
-    await ctx.send("You have entered the giveaway! You have " + str(df.Points[index]) + " points remaining.", hidden=True)
+    await ctx.send("You have entered the raffle! You have " + str(df.Points[index]) + " points remaining.", hidden=True)
 
 
 
@@ -197,6 +198,7 @@ async def _redeemCode(ctx, code: str):
     #await ctx.send("Redeemed Code!")
     username = await client.fetch_user(ctx.author_id)
     user_id = int(ctx.author_id)
+    global num_redeemed
     if code in active_codes.keys() and user_id in df["ID"].values: #valid key AND old user
 
         if not used.at[used.index[used["ID"] == user_id][0], code]: #make sure code has not already been redeemed!
@@ -205,9 +207,10 @@ async def _redeemCode(ctx, code: str):
             df.Points[index] = df.Points[index] + active_codes[code][0]
             used.at[used.index[used["ID"] == user_id], code] = True #marked redeemed
             await ctx.send("Code redeemed, you now have " + str(df.Points[index]) + " points!", hidden=True)
-            past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
-            if len(past_50_uses) > 50:
-                del past_50_uses[0]
+            num_redeemed += 1
+            #past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
+            #if len(past_50_uses) > 50:
+            #    del past_50_uses[0]
             print(df)
             print(used)
         else:
@@ -224,9 +227,10 @@ async def _redeemCode(ctx, code: str):
         used.loc[len(used.index)] = temp
         used.at[used.index[used["ID"] == user_id], code] = True
         await ctx.send("Code redeemed, you now have " + str(active_codes[code][0]) + " points!", hidden=True)
-        past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
-        if len(past_50_uses) > 50:
-            del past_50_uses[0]
+        num_redeemed += 1
+        #past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
+        #if len(past_50_uses) > 50:
+        #    del past_50_uses[0]
         print(df)
         print(used)
     
@@ -301,12 +305,17 @@ async def _downloadCSV(ctx):
 
 async def expired():
     while True:
-        time.sleep(1)
         for code in active_codes.keys():
             if active_codes[code][1] + active_codes[code][2] < time.time() and active_codes[code][2] != 0:
-                print(code, "expired")
                 del active_codes[code]
                 break
+        
+        today = date.today().strftime("%m/%d/%y")
+        uses_per_day[today] = num_redeemed
+        unique_users_per_day[today] = len(df.index)
+        unique_codes_per_day[today] = len(used.columns) - 1
+        points_in_circulation[today] = int(df['Points'].sum())
+
         for code in giveaways.keys():
             if giveaways[code][1] + giveaways[code][2] < time.time():
                 #select user here
@@ -314,31 +323,32 @@ async def expired():
                 cost, start_time, duration, entries, num_winners = giveaways[code]
                 i = 0
                 while i < num_winners:
+                    if len(entries) == 0:
+                        break
                     idx = random.randint(0, len(entries) - 1)
                     entry = entries[idx]
-                    if len(winners) >= entries: #dead raffle
+                    if len(winners) >= len(entries): #dead raffle
                         break
                     if entry not in winners:
                         winners.append(entry)
                         i += 1
                 
-                channel = discord.get_channel(int(adminChannelID))
+                channel = client.get_channel(int(adminChannelID))
                 await channel.send("Winners for the " + code + " giveaway:")
                 for i in range(len(winners)):
-                    await channel.send(i + ". " + str(client.get_user(winners[i])))
+                    await channel.send(str(i + 1) + ". " + str(client.get_user(winners[i])))
                 del giveaways[code]
-                print(winners)
                 break
-
+        
         df.to_csv("main/config/points.csv", index=False)
         used.to_csv("main/config/used.csv", index=False)
+        await asyncio.sleep(1)
 
-thread = Thread(target = expired)
-thread.daemon = True
-thread.start()
 with open('main/config/secrets.json') as f:
     secrets = json.load(f)
 TOKEN = secrets['token']
 loop = asyncio.get_event_loop()
 loop.create_task(client.start(TOKEN))
-Thread(target=loop.run_forever).start()
+loop.create_task(expired())
+#loop.run_forever()
+Thread(target=loop.run_forever).start() #is this preferred?

@@ -108,10 +108,76 @@
             </ul>
           </div>
         </nav>
-
+        
         <main role="main" class="col-md-9 ml-sm-auto col-lg-10 pt-3 px-4"><div class="chartjs-size-monitor" style="position: absolute; inset: 0px; overflow: hidden; pointer-events: none; visibility: hidden; z-index: -1;"><div class="chartjs-size-monitor-expand" style="position:absolute;left:0;top:0;right:0;bottom:0;overflow:hidden;pointer-events:none;visibility:hidden;z-index:-1;"><div style="position:absolute;width:1000000px;height:1000000px;left:0;top:0"></div></div><div class="chartjs-size-monitor-shrink" style="position:absolute;left:0;top:0;right:0;bottom:0;overflow:hidden;pointer-events:none;visibility:hidden;z-index:-1;"><div style="position:absolute;width:200%;height:200%;left:0; top:0"></div></div></div>
+          <div class = "row">
+            <div class="col-xl-3 col-md-6 mb-4">
+              <div class="card border-left-primary shadow h-100 py-2">
+                  <div class="card-body">
+                      <div class="row no-gutters align-items-center">
+                          <div class="col mr-2">
+                              <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                  Total number of uses</div>
+                              <div class="h5 mb-0 font-weight-bold text-gray-800">{{ uses_per_day_y|last }}</div>
+                          </div>
+                          <div class="col-auto">
+                              <i class="fas fa-calendar fa-2x text-gray-300"></i>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-success shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                Number of Unique Users</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ num_unique_users_y|last }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-dollar-sign fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-4">
+          <div class="card border-left-info shadow h-100 py-2">
+              <div class="card-body">
+                  <div class="row no-gutters align-items-center">
+                      <div class="col mr-2">
+                          <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                              Number of Unique Codes</div>
+                          <div class="h5 mb-0 font-weight-bold text-gray-800">{{ num_unique_codes_y|last }}</div>
+                      </div>
+                      <div class="col-auto">
+                          <i class="fas fa-dollar-sign fa-2x text-gray-300"></i>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      </div>
+      <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            Points in Circulation</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ points_in_circulation_y|last }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-comments fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+          </div>
           <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
-            <h1 class="h2">Dashboard</h1>
+            <h1 class="h2">Past 7 Day Uses</h1>
             <div class="btn-toolbar mb-2 mb-md-0">
               <div class="btn-group mr-2">
                 <button class="btn btn-sm btn-outline-secondary">Share</button>
@@ -124,7 +190,10 @@
             </div>
           </div>
 
-          <canvas class="my-4 chartjs-render-monitor" id="myChart" width="1538" height="649" style="display: block; width: 1538px; height: 649px;"></canvas>
+          <canvas class="my-4 chartjs-render-monitor" id="numUses" width="1538" height="649" style="display: block; width: 1538px; height: 649px;"></canvas>
+          <canvas class="my-4 chartjs-render-monitor" id="numUniqueUsers" width="1538" height="649" style="display: block; width: 1538px; height: 649px;"></canvas>
+          <canvas class="my-4 chartjs-render-monitor" id="numUniqueCodes" width="1538" height="649" style="display: block; width: 1538px; height: 649px;"></canvas>
+          <canvas class="my-4 chartjs-render-monitor" id="pointsInCirculation" width="1538" height="649" style="display: block; width: 1538px; height: 649px;"></canvas>
 
           <h2>Past 7 day activity</h2>
           <div class="table-responsive">
@@ -147,7 +216,7 @@
                   <td>10</td>
                 </tr>
               </tbody>
-              {% for use in past_50_uses %}
+              {% for use in past_week_uses %}
               <tbody>
                 <tr>
                   <td>{{use.0}}</td>
@@ -163,7 +232,14 @@
         </main>
       </div>
     </div>
-
+    {{ uses_per_day_x|json_script:"uses_per_day_x" }}
+    {{ uses_per_day_y|json_script:"uses_per_day_y" }}
+    {{ num_unique_users_x|json_script:"num_unique_users_x" }}
+    {{ num_unique_users_y|json_script:"num_unique_users_y" }}
+    {{ num_unique_codes_x|json_script:"num_unique_codes_x" }}
+    {{ num_unique_codes_y|json_script:"num_unique_codes_y" }}
+    {{ points_in_circulation_x|json_script:"points_in_circulation_x" }}
+    {{ points_in_circulation_y|json_script:"points_in_circulation_y" }}
     <!-- Bootstrap core JavaScript
     ================================================== -->
     <!-- Placed at the end of the document so the pages load faster -->
@@ -181,18 +257,20 @@
     <!-- Graphs -->
     <script src="{% static 'main/Chart.min.js.download' %}"></script>
     <script>
-      var ctx = document.getElementById("myChart");
+      var uses_per_day_x = JSON.parse(document.getElementById('uses_per_day_x').textContent);
+      var uses_per_day_y = JSON.parse(document.getElementById('uses_per_day_y').textContent);
+      var ctx = document.getElementById("numUses");
       var myChart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+          labels: uses_per_day_x,
           datasets: [{
-            data: [30339, 21345, 18483, 24003, 23489, 24092, 12034],
+            data: uses_per_day_y,
             lineTension: 0,
             backgroundColor: 'transparent',
-            borderColor: '#007bff',
+            borderColor: '#0275d8',
             borderWidth: 4,
-            pointBackgroundColor: '#007bff'
+            pointBackgroundColor: '#0275d8'
           }]
         },
         options: {
@@ -208,6 +286,94 @@
           }
         }
       });
+      var num_unique_users_x = JSON.parse(document.getElementById('num_unique_users_x').textContent);
+      var num_unique_users_y = JSON.parse(document.getElementById('num_unique_users_y').textContent);
+      var ctx = document.getElementById("numUniqueUsers");
+      var myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: num_unique_users_x,
+          datasets: [{
+            data: num_unique_users_y,
+            lineTension: 0,
+            backgroundColor: 'transparent',
+            borderColor: '#5cb85c',
+            borderWidth: 4,
+            pointBackgroundColor: '#5cb85c'
+          }]
+        },
+        options: {
+          scales: {
+            yAxes: [{
+              ticks: {
+                beginAtZero: false
+              }
+            }]
+          },
+          legend: {
+            display: false,
+          }
+        }
+      });
+      var num_unique_codes_x = JSON.parse(document.getElementById('num_unique_codes_x').textContent);
+      var num_unique_codes_y = JSON.parse(document.getElementById('num_unique_codes_y').textContent);
+      var ctx = document.getElementById("numUniqueCodes");
+      var myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: num_unique_codes_x,
+          datasets: [{
+            data: num_unique_codes_y,
+            lineTension: 0,
+            backgroundColor: 'transparent',
+            borderColor: '#5bc0de',
+            borderWidth: 4,
+            pointBackgroundColor: '#5bc0de'
+          }]
+        },
+        options: {
+          scales: {
+            yAxes: [{
+              ticks: {
+                beginAtZero: false
+              }
+            }]
+          },
+          legend: {
+            display: false,
+          }
+        }
+      });
+      var points_in_circulation_x = JSON.parse(document.getElementById('points_in_circulation_x').textContent);
+      var points_in_circulation_y = JSON.parse(document.getElementById('points_in_circulation_y').textContent);
+      var ctx = document.getElementById("pointsInCirculation");
+      var myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: points_in_circulation_x,
+          datasets: [{
+            data: points_in_circulation_y,
+            lineTension: 0,
+            backgroundColor: 'transparent',
+            borderColor: '#f0ad4e',
+            borderWidth: 4,
+            pointBackgroundColor: '#f0ad4e'
+          }]
+        },
+        options: {
+          scales: {
+            yAxes: [{
+              ticks: {
+                beginAtZero: false
+              }
+            }]
+          },
+          legend: {
+            display: false,
+          }
+        }
+      });
+    </script>
     </script>
   
 

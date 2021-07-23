@@ -8,8 +8,10 @@ from threading import Thread
 import string
 import random
 from datetime import date
+from datetime import datetime
 import asyncio
 import json
+from pytz import timezone
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 df = pd.read_csv("main/config/points.csv")
@@ -17,6 +19,7 @@ used = pd.read_csv("main/config/used.csv")
 past_50_uses = []
 #print(df)
 active_codes = {} #Code: points, start_time, duration
+giveaways = {} #Code: points, start_time, duration, entries, num_winners
 adminChannelID = ""
 @client.event
 async def on_ready():
@@ -33,11 +36,98 @@ async def on_ready():
   )]
 )
 async def _test(ctx, argone: str):
-    await ctx.respond(eat=True)
+    #await ctx.respond(eat=True)
     await ctx.send(f"You responded with {argone}.", hidden=True) #can be set to hidden if response shouldn't be public yea?
 
+@slash.slash(
+    name="startRaffle",
+    description="Start a raffle [ADMIN ONLY]",
+    options=[manage_commands.create_option(
+        name = "code",
+        description = "The code of the raffle (keep the code simple)",
+        option_type = 3,
+        required = True
+    ),
+    manage_commands.create_option(
+        name = "duration",
+        description = "Duration of the raffle in hours",
+        option_type = 4,
+        required = True
+    ),
+    manage_commands.create_option(
+        name = "cost",
+        description = "Cost of entering the raffle",
+        option_type = 4,
+        required = True
+    ),
+    manage_commands.create_option(
+        name = "number_of_winners",
+        description = "The number of winners for the raffle",
+        option_type = 4,
+        required = True
+    )]
+)
+async def _startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int):
+    print("hi")
+    if str(ctx.channel_id) != adminChannelID:
+        #await ctx.respond(eat=True)
+        await ctx.send("This is an admin only command!", hidden=True)
+        print(adminChannelID)
+        print(ctx.channel_id)
+        return
+    print("hello")
+    if code in giveaways.keys():
+        await ctx.send("This raffle code is already being used!")
+        return
+    giveaways[code] = (cost, time.time(), duration*360, [], number_of_winners)
+    await ctx.send("Raffle " + code + " has been started!")
+
+@slash.slash(
+    name = "enterRaffle",
+    description="Enter an ongoing raffle",
+    options = [manage_commands.create_option(
+        name = "code",
+        description = "The code of the raffle",
+        option_type = 3,
+        required = True
+    )]
+)
+async def _enterRaffle(ctx, code: str):
+    if code not in giveaways.keys():
+        await ctx.send("Invalid code!", hidden=True)
+        return
+    cost, start_time, duration, entries, num_winners = giveaways[code]
+    if ctx.author_id in entries:
+        await ctx.send("You have already entered this raffle!", hidden=True)
+        return
+    points = 0
+    if ctx.author_id in df["ID"].values:
+        index = df.index[df["ID"] == ctx.author_id][0]
+        points = df.Points[index]
+    if cost > points:
+        await ctx.send(cost + " points are required to enter this giveaway, you only have " + points + "!")
+        return
+    entries.append(ctx.author_id)
+    if cost != 0:
+        index = df.index[df["ID"] == ctx.author_id][0]
+        #df.Points[index] = df.Points[index] - cost
+        df.at[index, 'Points'] -= cost
+    await ctx.send("You have entered the giveaway! You have " + str(df.Points[index]) + " points remaining.", hidden=True)
 
 
+
+@slash.slash(
+  name="points",
+  description="Returns the user's points",
+)
+async def _points(ctx):
+    #await ctx.send(f"You responded with {argone}.", hidden=True) #can be set to hidden if response shouldn't be public yea?
+    user_id = int(ctx.author_id)
+    points = 0
+    if user_id in df["ID"].values:
+        index = df.index[df["ID"] == user_id][0]
+        points = df.Points[index]
+    await ctx.send("You have " + str(points) + " points!")
 
 @slash.slash(
     name="generateCode",
@@ -65,7 +155,7 @@ async def _generateCode(ctx, length: int, amount: int, name: typing.Optional[str
     #await ctx.respond()
     global adminChannelID
     if str(ctx.channel_id) != adminChannelID:
-        await ctx.respond(eat=True)
+        #await ctx.respond(eat=True)
         await ctx.send("This is an admin only command!", hidden=True)
         print(adminChannelID)
         print(ctx.channel_id)
@@ -114,8 +204,8 @@ async def _redeemCode(ctx, code: str):
             index = df.index[df["ID"] == user_id][0]
             df.Points[index] = df.Points[index] + active_codes[code][0]
             used.at[used.index[used["ID"] == user_id], code] = True #marked redeemed
-            await ctx.send("Code redeemed!", hidden=True)
-            past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), time.time(), active_codes[code][0]))
+            await ctx.send("Code redeemed, you now have " + str(df.Points[index]) + " points!", hidden=True)
+            past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
             if len(past_50_uses) > 50:
                 del past_50_uses[0]
             print(df)
@@ -133,8 +223,8 @@ async def _redeemCode(ctx, code: str):
         
         used.loc[len(used.index)] = temp
         used.at[used.index[used["ID"] == user_id], code] = True
-        await ctx.send("Code redeemed!", hidden=True)
-        past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), time.time(), active_codes[code][0]))
+        await ctx.send("Code redeemed, you now have " + str(active_codes[code][0]) + " points!", hidden=True)
+        past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
         if len(past_50_uses) > 50:
             del past_50_uses[0]
         print(df)
@@ -187,7 +277,7 @@ async def _setAdminChannel(ctx, channel_id: str):
         await ctx.send("Admin Channel Changed")
     
     else:
-        ctx.respond(eat = True)
+        #ctx.respond(eat = True)
         await ctx.send("This is an admin only command!", hidden=True)
     
 @slash.slash(
@@ -197,11 +287,11 @@ async def _setAdminChannel(ctx, channel_id: str):
 async def _downloadCSV(ctx):
 
     if str(ctx.channel_id) != adminChannelID:
-        await ctx.respond(eat=True)
+        #await ctx.respond(eat=True)
         await ctx.send("This is an admin only command!", hidden=True)
         return
 
-    await ctx.respond()
+    #await ctx.respond()
     #usedtemp = open("used.csv", "rb")
     
     with open ("main/config/points.csv", "rb") as file:
@@ -209,13 +299,35 @@ async def _downloadCSV(ctx):
    
 
 
-def expired():
+async def expired():
     while True:
         time.sleep(1)
         for code in active_codes.keys():
             if active_codes[code][1] + active_codes[code][2] < time.time() and active_codes[code][2] != 0:
                 print(code, "expired")
                 del active_codes[code]
+                break
+        for code in giveaways.keys():
+            if giveaways[code][1] + giveaways[code][2] < time.time():
+                #select user here
+                winners = []
+                cost, start_time, duration, entries, num_winners = giveaways[code]
+                i = 0
+                while i < num_winners:
+                    idx = random.randint(0, len(entries) - 1)
+                    entry = entries[idx]
+                    if len(winners) >= entries: #dead raffle
+                        break
+                    if entry not in winners:
+                        winners.append(entry)
+                        i += 1
+                
+                channel = discord.get_channel(int(adminChannelID))
+                await channel.send("Winners for the " + code + " giveaway:")
+                for i in range(len(winners)):
+                    await channel.send(i + ". " + str(client.get_user(winners[i])))
+                del giveaways[code]
+                print(winners)
                 break
 
         df.to_csv("main/config/points.csv", index=False)

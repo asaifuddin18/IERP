@@ -24,27 +24,26 @@ num_redeemed = 0
 active_codes = {} #Code: points, start_time, duration
 giveaways = {} #Code: points, start_time, duration, entries, num_winners
 adminChannelID = ""
+with open("main/config/shop.json") as f:
+    shop_info = json.load(f)
+
 @client.event
 async def on_ready():
     print("Ready!")
 
 @slash.slash(
   name="test",
-  description="this returns the bot latency",
-  options=[manage_commands.create_option(
-    name = "argone",
-    description = "description of first argument",
-    option_type = 3,
-    required = True
-  )]
+  description="this returns the bot latency"
 )
-async def _test(ctx, argone: str):
+async def _test(ctx):
     #await ctx.respond(eat=True)
-    await ctx.send(f"You responded with {argone}.", hidden=True) #can be set to hidden if response shouldn't be public yea?
+    await ctx.send(f"You responded with .", hidden=True) #can be set to hidden if response shouldn't be public yea?
 
-@slash.slash(
+@slash.subcommand(
+    base="admin",
     name="startRaffle",
     description="Start a raffle [ADMIN ONLY]",
+    base_description="Admin only commands.",
     options=[manage_commands.create_option(
         name = "code",
         description = "The code of the raffle (keep the code simple)",
@@ -70,7 +69,7 @@ async def _test(ctx, argone: str):
         required = True
     )]
 )
-async def _startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int):
+async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int):
     if str(ctx.channel_id) != adminChannelID:
         #await ctx.respond(eat=True)
         await ctx.send("This is an admin only command!", hidden=True)
@@ -119,7 +118,7 @@ async def _enterRaffle(ctx, code: str):
 
 @slash.slash(
   name="points",
-  description="Returns the user's points",
+  description="Returns the user's points"
 )
 async def _points(ctx):
     #await ctx.send(f"You responded with {argone}.", hidden=True) #can be set to hidden if response shouldn't be public yea?
@@ -130,9 +129,11 @@ async def _points(ctx):
         points = df.Points[index]
     await ctx.send("You have " + str(points) + " points!")
 
-@slash.slash(
+@slash.subcommand(
+    base="admin",
     name="generateCode",
-    description="This generates a reward code [ADMIN ONLY]",
+    description="This generates a reward code",
+    base_description="Admin only commands.",
     options=[manage_commands.create_option(
         name = "length",
         description= "Length of the code in minutes",
@@ -152,7 +153,7 @@ async def _points(ctx):
         required = False
     )]
 )
-async def _generateCode(ctx, length: int, amount: int, name: typing.Optional[str] = ""):
+async def _admin_generateCode(ctx, length: int, amount: int, name: typing.Optional[str] = ""):
     #await ctx.respond()
     global adminChannelID
     if str(ctx.channel_id) != adminChannelID:
@@ -257,11 +258,31 @@ async def _viewLeaderboard(ctx, page: typing.Optional[int] = 0):
         temp = dfcpy.Tag[i] + ": " + str(dfcpy.Points[i])
         em.add_field(name = f'{i+1}: {temp}', value='\u200b', inline = False)
     await ctx.send(embed = em)
+    
+@slash.subcommand(
+    base="admin",
+    name="downloadCSV",
+    description="Downloads the CSV.",
+    base_description="Admin only commands."
+)
+async def _admin_downloadCSV(ctx):
 
+    if str(ctx.channel_id) != adminChannelID:
+        #await ctx.respond(eat=True)
+        await ctx.send("This is an admin only command!", hidden=True)
+        return
 
-@slash.slash(
+    #await ctx.respond()
+    #usedtemp = open("used.csv", "rb")
+    
+    with open ("main/config/points.csv", "rb") as file:
+        await ctx.send("Points: ", file=discord.File(file, "points.csv"))
+
+@slash.subcommand(
+    base="admin",
     name="setAdminChannel",
-    description="Changes the admin channel.",
+    description="Changes the admin channel",
+    base_description="Admin only commands.",
     options=[manage_commands.create_option(
         name = "channel_id",
         description = "New Channel ID",
@@ -269,7 +290,7 @@ async def _viewLeaderboard(ctx, page: typing.Optional[int] = 0):
         required = True
     )]
 )
-async def _setAdminChannel(ctx, channel_id: str):
+async def _admin_setAdminChannel(ctx, channel_id: str):
     global adminChannelID
     if adminChannelID == "":
         #await ctx.respond()
@@ -283,25 +304,92 @@ async def _setAdminChannel(ctx, channel_id: str):
     else:
         #ctx.respond(eat = True)
         await ctx.send("This is an admin only command!", hidden=True)
-    
-@slash.slash(
-    name="downloadCSV",
-    description="Downloads the CSV.",
+
+@slash.subcommand(
+    base = "shop",
+    name="list",
+    description="Displays what we are currently selling for rewards points!",
+    base_description="IERP shop related commands!"
 )
-async def _downloadCSV(ctx):
 
-    if str(ctx.channel_id) != adminChannelID:
-        #await ctx.respond(eat=True)
-        await ctx.send("This is an admin only command!", hidden=True)
-        return
+async def _shop_list(ctx):
+    embed=discord.Embed(title="IERP Shop", description="The place where you can exchange rewards points for server rewards and merch!", color=0xf58f19)
+    embed.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
+    embed.set_thumbnail(url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
+    embed.add_field(name="COLOR ROLES", value='\u200b', inline=False)
+    for role in shop_info['roles']:
+        embed.add_field(name=role["name"], value = str(role["cost"]) + " points", inline=True)
+    embed.add_field(name="MERCH", value='\u200b', inline=False)
+    for item in shop_info['products']:
+        embed.add_field(name=item['name'], value = str(item['cost']) + " points", inline=True)
+    embed.set_footer(text="Purchasing a color role will remove any previously purchased color roles. Contact admin via #contact-admin if you purchase merch or if you  have any questions or concerns.")
+    #embed.set_image(url="https://lh5.googleusercontent.com/OQj9OrsHWwKV7MmV2iXduFz3V3yccVX6zi4ECMA5tigaicDUmTShPtPSum2Wh2UsbIuMuuTNKlsGWFqD74ZEhN3tg2Wii2puUi2EJz7NrE8VGj2CNtdJ4SaoS4hnKXLxcA=w5100")
+    await ctx.send(embed=embed, hidden=True)
 
-    #await ctx.respond()
-    #usedtemp = open("used.csv", "rb")
-    
-    with open ("main/config/points.csv", "rb") as file:
-        await ctx.send("Points: ", file=discord.File(file, "points.csv"))
-   
+buy_choices = []
+for role in shop_info['roles']:
+    buy_choices.append(manage_commands.create_choice(
+        name=role['name'],
+        value=role['name']
+    ))
+for item in shop_info['products']:
+    buy_choices.append(manage_commands.create_choice(
+        name=item['name'],
+        value=item['name']
+    ))
 
+@slash.subcommand(
+    base = "shop",
+    name = "buy",
+    description = "Buy something from the shop!",
+    base_description="IERP shop related commands!",
+    options = [manage_commands.create_option(
+        name = "item",
+        description = "The name of the item",
+        option_type = 3,
+        required = True,
+        choices=buy_choices
+
+    )]
+)
+async def _shop_buy(ctx, item: str):
+    for product in shop_info['products']:
+        if product['name'] == item:
+            cost = product['cost']
+            user_id = int(ctx.author_id)
+            points = 0
+            if user_id in df["ID"].values:
+                index = df.index[df["ID"] == user_id][0]
+                points = df.Points[index]
+            if points >= cost:
+                index = df.index[df["ID"] == user_id][0]
+                df.at[index, 'Points'] -= cost
+                ctx.send("Congratulations, you have bought a " + product['name']+ "!. Open a ticket under #contact-admins for more information about availability and pickup. You now have " + str(df.Points[index]) + " points.", hidden=True)
+                return
+            else:
+                ctx.send("Sorry, you do not have enough points! " + product['name'] + " costs " + str(product['cost']) + " points and you only have " + str(points) + "points!")
+                return
+    else:
+        for role in shop_info['roles']:
+            cost = role['cost']
+            user_id = int(ctx.author_id)
+            points = 0
+            if user_id in df["ID"].values:
+                index = df.index[df["ID"] == user_id][0]
+                points = df.Points[index]
+            if points >= cost:
+                index = df.index[df["ID"] == user_id][0]
+                df.at[index, 'Points'] -= cost
+                ctx.send("Congratulations, you have bought a " + role['name']+ "! You now have " + str(df.Points[index]) + " points.", hidden=True)
+                #APPLY ROLE HERE
+                return
+            else:
+                ctx.send("Sorry, you do not have enough points! " + role['name'] + " costs " + str(role['cost']) + " points and you only have " + str(points) + "points!")
+                return
+                
+        else:
+            ctx.send("ERROR: item not found, open a ticket under #contact-admins for help", hidden=True)
+            return
 
 async def expired():
     while True:

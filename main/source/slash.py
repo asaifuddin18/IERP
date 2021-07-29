@@ -1,4 +1,6 @@
 import discord
+from discord_slash.utils.manage_commands import create_permission
+from discord_slash.model import SlashCommandPermissionType
 from discord_slash import SlashCommand
 from discord_slash.utils import manage_commands
 import typing
@@ -12,18 +14,48 @@ from datetime import datetime
 import asyncio
 import json
 from pytz import timezone
+import math
+import pickle
+import os
+from os import path
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
-df = pd.read_csv("main/config/points.csv")
-used = pd.read_csv("main/config/used.csv")
+df = None
+if path.exists("main/config/points.csv"):
+    df = pd.read_csv("main/config/points.csv")
+else:
+    df = pd.DataFrame(columns=["ID", "Tag", "Points"])
+
+if path.exists("main/config/used.csv"):
+    used = pd.read_csv("main/config/used.csv")
+else:
+    used = pd.DataFrame(columns=["ID"])
 uses_per_day = {} #Date: int (cumulative)
 unique_users_per_day = {} #Date: int (cumulative) len(slash.df.index)
+if path.exists("main/config/unique_users_per_day.pickle") and os.path.getsize("main/config/unique_users_per_day.pickle") > 0:
+    with open("main/config/unique_users_per_day.pickle", "rb") as f:
+        unique_users_per_day = pickle.load(f)
+        
 unique_codes_per_day = {} #Date: int (cumulative) len(slash.used.columns) - 1
+if path.exists("main/config/unique_codes_per_day.pickle") and os.path.getsize("main/config/unique_codes_per_day.pickle") > 0:
+    with open("main/config/unique_codes_per_day.pickle", "rb") as f:
+        unique_codes_per_day = pickle.load(f)
+
 points_in_circulation = {} #Date: int (cumulative) slash.df['Points'].sum()
+if path.exists("main/config/points_in_circulation.pickle") and os.path.getsize("main/config/points_in_circulation.pickle") > 0:
+    with open("main/config/points_in_circulation.pickle", "rb") as f:
+        points_in_circulation = pickle.load(f)
+        
 num_redeemed = 0
 active_codes = {} #Code: points, start_time, duration
 giveaways = {} #Code: points, start_time, duration, entries, num_winners
+seven_day_redeems = []
+thirty_day_purchase = []
 adminChannelID = ""
+guilds_and_admin_roles = {
+    739269285624676429: [create_permission(743208843932074094, SlashCommandPermissionType.ROLE, True)
+    ]
+}
 with open("main/config/shop.json") as f:
     shop_info = json.load(f)
 
@@ -31,19 +63,15 @@ with open("main/config/shop.json") as f:
 async def on_ready():
     print("Ready!")
 
-@slash.slash(
-  name="test",
-  description="this returns the bot latency"
-)
-async def _test(ctx):
-    #await ctx.respond(eat=True)
-    await ctx.send(f"You responded with .", hidden=True) #can be set to hidden if response shouldn't be public yea?
+
 
 @slash.subcommand(
     base="admin",
     name="startRaffle",
     description="Start a raffle [ADMIN ONLY]",
     base_description="Admin only commands.",
+    base_default_permission=False,
+    base_permissions=guilds_and_admin_roles,
     options=[manage_commands.create_option(
         name = "code",
         description = "The code of the raffle (keep the code simple)",
@@ -79,7 +107,7 @@ async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of
     if code in giveaways.keys():
         await ctx.send("This raffle code is already being used!")
         return
-    giveaways[code] = (cost, time.time(), duration*60, [], number_of_winners)
+    giveaways[code] = (cost, time.time(), duration*360, [], number_of_winners)
     await ctx.send("Raffle " + code + " has been started!")
 
 @slash.slash(
@@ -127,13 +155,18 @@ async def _points(ctx):
     if user_id in df["ID"].values:
         index = df.index[df["ID"] == user_id][0]
         points = df.Points[index]
-    await ctx.send("You have " + str(points) + " points!")
+    if points == 0:
+        await ctx.send("You have <:OMEGALUL:417825307605860353> points!") 
+    else:
+        await ctx.send("You have " + str(points) + " points!")
 
 @slash.subcommand(
     base="admin",
     name="generateCode",
     description="This generates a reward code",
     base_description="Admin only commands.",
+    base_default_permission=False,
+    base_permissions=guilds_and_admin_roles,
     options=[manage_commands.create_option(
         name = "length",
         description= "Length of the code in minutes",
@@ -209,9 +242,17 @@ async def _redeemCode(ctx, code: str):
             used.at[used.index[used["ID"] == user_id], code] = True #marked redeemed
             await ctx.send("Code redeemed, you now have " + str(df.Points[index]) + " points!", hidden=True)
             num_redeemed += 1
-            #past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
+            date_now = datetime.now().astimezone(timezone('US/Central'))
+            seven_day_redeems.append((df.Tag[index], code, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), active_codes[code][0], date_now.replace(tzinfo=None)))
             #if len(past_50_uses) > 50:
             #    del past_50_uses[0]
+            while len(seven_day_redeems) != 0:
+                dt = seven_day_redeems[0][5]
+                now = datetime.now()
+                if (now - dt).days >= 7:
+                    del seven_day_redeems[0]
+                else:
+                    break
             print(df)
             print(used)
         else:
@@ -229,9 +270,17 @@ async def _redeemCode(ctx, code: str):
         used.at[used.index[used["ID"] == user_id], code] = True
         await ctx.send("Code redeemed, you now have " + str(active_codes[code][0]) + " points!", hidden=True)
         num_redeemed += 1
-        #past_50_uses.append((df.Tag[index], code, date.today().strftime("%m/%d/%y"), datetime.now().astimezone(timezone('US/Central')).strftime("%H:%M:%S"), active_codes[code][0]))
+        date_now = datetime.now().astimezone(timezone('US/Central'))
+        seven_day_redeems.append((df.Tag[index], code, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), active_codes[code][0], date_now.replace(tzinfo=None)))
         #if len(past_50_uses) > 50:
         #    del past_50_uses[0]
+        while len(seven_day_redeems) != 0:
+            dt = seven_day_redeems[0][5]
+            now = datetime.now()
+            if (now - dt).days >= 7:
+                del seven_day_redeems[0]
+            else:
+                break
         print(df)
         print(used)
     
@@ -239,7 +288,7 @@ async def _redeemCode(ctx, code: str):
         await ctx.send("Invalid or expired code!", hidden=True)
 
 @slash.slash(
-    name="viewLeaderboard",
+    name="leaderboard",
     description="Displays the top point earners",
     options=[manage_commands.create_option(
         name = "page",
@@ -248,22 +297,44 @@ async def _redeemCode(ctx, code: str):
         required = False
     )]
 )
-async def _viewLeaderboard(ctx, page: typing.Optional[int] = 0):
+async def _leaderboard(ctx, page: typing.Optional[int] = 1): #todo
     #await ctx.respond()
     
     dfcpy = df[['Tag', 'Points']].copy()
     dfcpy.sort_values('Points')
     em = discord.Embed(title = f'Top members by points in {ctx.guild.name}', description = 'The highest point members in the server')
-    for i in range(len(df.index)):
+    total_pages = math.ceil(len(df.index)/10)
+    new_page = page
+    if new_page > total_pages:
+        new_page = total_pages
+    
+    for i in range(10*(new_page - 1), min(len(df.index), 10*new_page)):
+        if i < 0:
+            break
         temp = dfcpy.Tag[i] + ": " + str(dfcpy.Points[i])
-        em.add_field(name = f'{i+1}: {temp}', value='\u200b', inline = False)
+        if i == 0:
+            em.add_field(name = f'🥇: {temp} points', value='\u200b', inline = False)
+        elif i == 1:
+            em.add_field(name = f'🥈: {temp} points', value='\u200b', inline = False)
+        elif i == 2:
+            em.add_field(name = f'🥉: {temp} points', value='\u200b', inline = False)
+        elif i == len(df.index) - 1:
+            em.add_field(name = f'<:KEKW:637019720721104896>: {temp} points', value='\u200b', inline = False)
+        else:
+            em.add_field(name = f'{i+1}: {temp} points', value='\u200b', inline = False)
+    #em.set_footer(text="Page " + str(new_page) + "/" + str(total_pages))
+    em.set_footer(text=f'Page {new_page}/{total_pages}')
+    em.set_thumbnail(url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
+    em.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     await ctx.send(embed = em)
     
 @slash.subcommand(
     base="admin",
     name="downloadCSV",
     description="Downloads the CSV.",
-    base_description="Admin only commands."
+    base_description="Admin only commands.",
+    base_default_permission=False,
+    base_permissions=guilds_and_admin_roles
 )
 async def _admin_downloadCSV(ctx):
 
@@ -283,6 +354,8 @@ async def _admin_downloadCSV(ctx):
     name="setAdminChannel",
     description="Changes the admin channel",
     base_description="Admin only commands.",
+    base_default_permission=False,
+    base_permissions=guilds_and_admin_roles,
     options=[manage_commands.create_option(
         name = "channel_id",
         description = "New Channel ID",
@@ -364,10 +437,21 @@ async def _shop_buy(ctx, item: str):
             if points >= cost:
                 index = df.index[df["ID"] == user_id][0]
                 df.at[index, 'Points'] -= cost
-                ctx.send("Congratulations, you have bought a " + product['name']+ "!. Open a ticket under #contact-admins for more information about availability and pickup. You now have " + str(df.Points[index]) + " points.", hidden=True)
+                await ctx.send("Congratulations, you have bought a " + product['name']+ "!. Open a ticket under #contact-admins for more information about availability and pickup. You now have " + str(df.Points[index]) + " points.", hidden=True)
+                channel = client.get_channel(int(adminChannelID))
+                await channel.send(str(client.get_user(user_id)) + " has just purchased a " + product['name'] + ".")
+                date_now = datetime.now().astimezone(timezone('US/Central'))
+                thirty_day_purchase.append((df.Tag[index], item, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), cost, date_now.replace(tzinfo=None)))
+                while len(thirty_day_purchase) != 0:
+                    dt = thirty_day_purchase[0][5]
+                    now = datetime.now()
+                    if (now - dt).days >= 30:
+                        del seven_day_redeems[0]
+                    else:
+                        break
                 return
             else:
-                ctx.send("Sorry, you do not have enough points! " + product['name'] + " costs " + str(product['cost']) + " points and you only have " + str(points) + "points!")
+                await ctx.send("Sorry, you do not have enough points! " + product['name'] + " costs " + str(product['cost']) + " points and you only have " + str(points) + "points!")
                 return
     else:
         for role in shop_info['roles']:
@@ -380,15 +464,24 @@ async def _shop_buy(ctx, item: str):
             if points >= cost:
                 index = df.index[df["ID"] == user_id][0]
                 df.at[index, 'Points'] -= cost
-                ctx.send("Congratulations, you have bought a " + role['name']+ "! You now have " + str(df.Points[index]) + " points.", hidden=True)
+                await ctx.send("Congratulations, you have bought a " + role['name']+ "! You now have " + str(df.Points[index]) + " points.", hidden=True)
                 #APPLY ROLE HERE
+                date_now = datetime.now().astimezone(timezone('US/Central'))
+                thirty_day_purchase.append((df.Tag[index], item, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), cost, date_now.replace(tzinfo=None)))
+                while len(thirty_day_purchase) != 0:
+                    dt = thirty_day_purchase[0][5]
+                    now = datetime.now()
+                    if (now - dt).days >= 30:
+                        del seven_day_redeems[0]
+                    else:
+                        break
                 return
             else:
-                ctx.send("Sorry, you do not have enough points! " + role['name'] + " costs " + str(role['cost']) + " points and you only have " + str(points) + "points!")
+                await ctx.send("Sorry, you do not have enough points! " + role['name'] + " costs " + str(role['cost']) + " points and you only have " + str(points) + "points!")
                 return
                 
         else:
-            ctx.send("ERROR: item not found, open a ticket under #contact-admins for help", hidden=True)
+            await ctx.send("ERROR: item not found, open a ticket under #contact-admins for help", hidden=True)
             return
 
 async def expired():
@@ -430,7 +523,15 @@ async def expired():
         
         df.to_csv("main/config/points.csv", index=False)
         used.to_csv("main/config/used.csv", index=False)
-        await asyncio.sleep(1)
+        with open("main/config/unique_users_per_day.pickle", "wb") as f:
+            pickle.dump(unique_users_per_day, f, protocol=pickle.HIGHEST_PROTOCOL)
+        
+        with open("main/config/unique_codes_per_day.pickle", "wb") as f:
+            pickle.dump(unique_codes_per_day, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        with open("main/config/points_in_circulation.pickle", "wb") as f:
+            pickle.dump(points_in_circulation, f, protocol=pickle.HIGHEST_PROTOCOL)
+        await asyncio.sleep(60)
 
 with open('main/config/secrets.json') as f:
     secrets = json.load(f)

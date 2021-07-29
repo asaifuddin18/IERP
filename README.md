@@ -2,4 +2,7 @@
 Program that creates rewards program for Illini Esports discord.
 
 ## TODO
-Implement past 7 days list on website
+
+Add/subtract points command
+
+Make option to announce raffle start & winners in a channel

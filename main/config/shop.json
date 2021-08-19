@@ -3,27 +3,19 @@
       {
         "name": "Blue color role 🟦",
         "role_id": 1,
-        "cost": 500
+        "cost": 250
       },
       {
         "name": "Yellow color role 🟨",
         "role_id": 2,
-        "cost": 500
+        "cost": 250
       },
       {
         "name": "Green color role 🟩",
         "role_id": 3,
-        "cost": 500
+        "cost": 250
       }
     ],
     "products": [
-      {
-        "name": "Lanyard",
-        "cost": 1000
-      },
-      {
-        "name": "Sticker",
-        "cost": 1000
-      }
     ]
   }

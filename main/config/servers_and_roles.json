@@ -1,0 +1,44 @@
+{
+    "servers": [
+        {
+            "name": "debug_server",
+            "id": 739269285624676429,
+            "roles": [
+                {
+                    "name": "debug_role",
+                    "id": 743208843932074094
+                }
+            ] 
+        },
+        {
+            "name": "ie_admin",
+            "id": 577343686686408707,
+            "roles": [
+                {
+                    "name": "president",
+                    "id": 590392547374006274
+                },
+                {
+                    "name": "director",
+                    "id": 590382235442479104
+                },
+                {
+                    "name": "moderator",
+                    "id": 590389894803750914
+                },
+                {
+                    "name": "community_coordinator",
+                    "id": 590382061790167047
+                },
+                {
+                    "name": "competitive_coordinator",
+                    "id": 590382028084740107
+                },
+                {
+                    "name": "event_logistics",
+                    "id": 682368511322226689
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,4 @@
+django
+discord
+discord-py-slash-command
+pandas

@@ -18,6 +18,7 @@ import math
 import pickle
 import os
 from os import path
+import requests
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 df = None
@@ -45,24 +46,34 @@ points_in_circulation = {} #Date: int (cumulative) slash.df['Points'].sum()
 if path.exists("main/config/points_in_circulation.pickle") and os.path.getsize("main/config/points_in_circulation.pickle") > 0:
     with open("main/config/points_in_circulation.pickle", "rb") as f:
         points_in_circulation = pickle.load(f)
-        
+
+with open('main/config/point_values.json') as f:
+    point_values = json.load(f)
+
 num_redeemed = 0
 active_codes = {} #Code: points, start_time, duration
 giveaways = {} #Code: points, start_time, duration, entries, num_winners
 seven_day_redeems = []
 thirty_day_purchase = []
-adminChannelID = ""
-guilds_and_admin_roles = {
-    739269285624676429: [create_permission(743208843932074094, SlashCommandPermissionType.ROLE, True)
-    ]
-}
+adminChannelID = "739269286291439628"
+guilds_and_admin_roles = {}
+active_pugs = {} #Game: end_time, users
+with open('main/config/servers_and_roles.json') as f:
+    servers_and_roles = json.load(f)
+
+for server in servers_and_roles['servers']:
+    guilds_and_admin_roles[server['id']] = []
+    for role in server['roles']:
+        id = role['id']
+        guilds_and_admin_roles[server['id']].append(create_permission(id, SlashCommandPermissionType.ROLE, True))
+    guilds_and_admin_roles[server['id']] = [create_permission(x['id'], SlashCommandPermissionType.ROLE, True) for x in server['roles']]
+#guilds_and_admin_roles = {739269285624676429: [create_permission(743208843932074094, SlashCommandPermissionType.ROLE, True)]}
 with open("main/config/shop.json") as f:
     shop_info = json.load(f)
 
 @client.event
 async def on_ready():
     print("Ready!")
-
 
 
 @slash.subcommand(
@@ -122,12 +133,6 @@ async def on_ready():
     )]
 )
 async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int, announcement_channel: typing.Optional[str] = "", description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
-    if str(ctx.channel_id) != adminChannelID:
-        #await ctx.respond(eat=True)
-        await ctx.send("This is an admin only command!", hidden=True)
-        print(adminChannelID)
-        print(ctx.channel_id)
-        return
     if code in giveaways.keys():
         await ctx.send("This raffle code is already being used!")
         return
@@ -207,14 +212,38 @@ async def _points(ctx):
 
 @slash.subcommand(
     base="admin",
-    name="generateCode",
+    name="startPUG",
+    description="Start a PUG, be sure to announce the code to participants",
+    base_description="Admin only commands.",
+    base_default_permission=False,
+    #base_permissions=guilds_and_admin_roles,
+    options=[manage_commands.create_option(
+        name = "game",
+        description = "Game being played",
+        option_type = 3,
+        required = True,
+        choices=[x['name'] for x in point_values['events']]
+    )]
+)
+
+async def _admin_startPUG(ctx, game: str):
+    for current in point_values['events']:
+        if current['name'] == game:
+            active_pugs[game] = (time.time() + current['duration']*60, [])
+    else:
+        ctx.send("[ERROR] Could not find event!")
+
+
+@slash.subcommand(
+    base="admin",
+    name="customGenerateCode",
     description="This generates a reward code",
     base_description="Admin only commands.",
     base_default_permission=False,
-    base_permissions=guilds_and_admin_roles,
+    #base_permissions=guilds_and_admin_roles,
     options=[manage_commands.create_option(
         name = "length",
-        description= "Length of the code in minutes",
+        description= "Length of the code in minutes (0 is infinite)",
         option_type = 4,
         required = True
     ),
@@ -231,16 +260,8 @@ async def _points(ctx):
         required = False
     )]
 )
-async def _admin_generateCode(ctx, length: int, amount: int, name: typing.Optional[str] = ""):
-    #await ctx.respond()
-    global adminChannelID
-    if str(ctx.channel_id) != adminChannelID:
-        #await ctx.respond(eat=True)
-        await ctx.send("This is an admin only command!", hidden=True)
-        print(adminChannelID)
-        print(ctx.channel_id)
-        return
 
+async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.Optional[str] = ""):
     seconds = length*60
     code = name
     if code == "":
@@ -257,9 +278,10 @@ async def _admin_generateCode(ctx, length: int, amount: int, name: typing.Option
         print(df)
         print(used)
         response = code + " of value " + str(amount) + " generated for " + str(length) + " minutes" 
-        await ctx.send(response)
+        await ctx.send(response, hidden=True)
     else:
-        await ctx.send("Could not generate code. Code with same name has already been generated!")
+        await ctx.send("Could not generate code. Code with same name has already been generated!", hidden=True)
+
 
 @slash.slash(
     name="redeemCode",
@@ -332,6 +354,7 @@ async def _redeemCode(ctx, code: str):
     else: #invalid key
         await ctx.send("Invalid or expired code!", hidden=True)
 
+
 @slash.slash(
     name="leaderboard",
     description="Displays the top point earners",
@@ -372,57 +395,19 @@ async def _leaderboard(ctx, page: typing.Optional[int] = 1): #todo
     em.set_thumbnail(url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     em.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     await ctx.send(embed = em)
-    
+
+  
 @slash.subcommand(
     base="admin",
     name="downloadCSV",
     description="Downloads the CSV.",
     base_description="Admin only commands.",
     base_default_permission=False,
-    base_permissions=guilds_and_admin_roles
+    #base_permissions=guilds_and_admin_roles
 )
 async def _admin_downloadCSV(ctx):
-
-    if str(ctx.channel_id) != adminChannelID:
-        #await ctx.respond(eat=True)
-        await ctx.send("This is an admin only command!", hidden=True)
-        return
-
-    #await ctx.respond()
-    #usedtemp = open("used.csv", "rb")
-    
     with open ("main/config/points.csv", "rb") as file:
-        await ctx.send("Points: ", file=discord.File(file, "points.csv"))
-
-@slash.subcommand(
-    base="admin",
-    name="setAdminChannel",
-    description="Changes the admin channel",
-    base_description="Admin only commands.",
-    base_default_permission=False,
-    base_permissions=guilds_and_admin_roles,
-    options=[manage_commands.create_option(
-        name = "channel_id",
-        description = "New Channel ID",
-        option_type = 3,
-        required = True
-    )]
-)
-async def _admin_setAdminChannel(ctx, channel_id: str):
-    global adminChannelID
-    if adminChannelID == "":
-        #await ctx.respond()
-        adminChannelID = str(channel_id)
-        await ctx.send("Admin Channel Initialized")
-    elif adminChannelID  == str(ctx.channel_id):
-        #await ctx.respond()
-        adminChannelID = channel_id
-        await ctx.send("Admin Channel Changed")
-    
-    else:
-        #ctx.respond(eat = True)
-        await ctx.send("This is an admin only command!", hidden=True)
-
+        await ctx.send("Points: ", file=discord.File(file, "points.csv"), hidden=True)
 
 @slash.subcommand(
     base = "shop",
@@ -438,11 +423,11 @@ async def _shop_list(ctx):
     embed.add_field(name="COLOR ROLES", value='\u200b', inline=False)
     for role in shop_info['roles']:
         embed.add_field(name=role["name"], value = str(role["cost"]) + " points", inline=True)
-    embed.add_field(name="MERCH", value='\u200b', inline=False)
-    for item in shop_info['products']:
-        embed.add_field(name=item['name'], value = str(item['cost']) + " points", inline=True)
-    embed.set_footer(text="Purchasing a color role will remove any previously purchased color roles. Contact admin via #contact-admin if you purchase merch or if you  have any questions or concerns.")
-    embed.set_image(url="https://lh5.googleusercontent.com/OQj9OrsHWwKV7MmV2iXduFz3V3yccVX6zi4ECMA5tigaicDUmTShPtPSum2Wh2UsbIuMuuTNKlsGWFqD74ZEhN3tg2Wii2puUi2EJz7NrE8VGj2CNtdJ4SaoS4hnKXLxcA=w5100")
+    #embed.add_field(name="MERCH", value='\u200b', inline=False) #we're broke lmao
+    #for item in shop_info['products']:
+    #    embed.add_field(name=item['name'], value = str(item['cost']) + " points", inline=True)
+    embed.set_footer(text="Purchasing a color role will remove any previously purchased color roles. Contact admin via #contact-admin if you have any questions or concerns.")
+    #embed.set_image(url="https://lh5.googleusercontent.com/OQj9OrsHWwKV7MmV2iXduFz3V3yccVX6zi4ECMA5tigaicDUmTShPtPSum2Wh2UsbIuMuuTNKlsGWFqD74ZEhN3tg2Wii2puUi2EJz7NrE8VGj2CNtdJ4SaoS4hnKXLxcA=w5100")
     await ctx.send(embed=embed, hidden=True)
 
 buy_choices = []
@@ -543,6 +528,26 @@ async def expired():
         unique_codes_per_day[today] = len(used.columns) - 1
         points_in_circulation[today] = int(df['Points'].sum())
 
+        for game in active_pugs.keys(): #LOOK AT CHANNELS
+            for gameDict in point_values['events']:
+                if gameDict == game:
+                    channels = client.get_channel(gameDict['id']).voice_channels
+                    for channel in channels:
+                        for member in channel.members:
+                            if member.id not in active_pugs[game][1]:
+                                active_pugs[game][1].append(member.id)
+                                if member.id in df["ID"].values: #returning member
+                                    index = df.index[df["ID"] == member.id][0]
+                                    df.Points[index] = df.Points[index] + gameDict['value']
+                                    active_pugs[game][1].append(member.id)
+                                else: #new member
+                                    index = len(df.index)
+                                    df.loc[len(df.index)] = [member.id, str(member), gameDict['value']] 
+              
+            if active_pugs[game][0] < time.time():
+                del active_pugs[game]
+                break
+        print("check points")
         for code in giveaways.keys():
             if giveaways[code][1] + giveaways[code][2] < time.time():
                 #select user here
@@ -597,7 +602,9 @@ async def expired():
 
         with open("main/config/points_in_circulation.pickle", "wb") as f:
             pickle.dump(points_in_circulation, f, protocol=pickle.HIGHEST_PROTOCOL)
-        await asyncio.sleep(60)
+        #requests.get("http://azizs2.web.illinois.edu")
+        #requests.get("https://www.google.com/")
+        await asyncio.sleep(30)
 
 with open('main/config/secrets.json') as f:
     secrets = json.load(f)

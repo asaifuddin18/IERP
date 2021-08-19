@@ -7,20 +7,11 @@ This project runs on Django, but does not have all the necessary files due to se
     pip install -r requirements.txt
 Note: you will have to make an edit in discord/client.py:
 Remove:
-    '''
     self.loop = asyncio.get_event_loop() if loop is None else loop
-    '''
 and add:
-    '''
+
     if loop is None:
 	    self.loop = asyncio.new_event_loop()
 	    asyncio.set_event_loop(self.loop)
     else:
     self.loop = loop
-    '''
-
-## TODO:
-Test VC recognitiion
-Add react-points in announcement channel
-Add documentation
-Edit website

@@ -56,6 +56,7 @@ giveaways = {} #Code: points, start_time, duration, entries, num_winners
 seven_day_redeems = []
 thirty_day_purchase = []
 adminChannelID = "739269286291439628"
+announcement_channel = "739269286291439628"
 guilds_and_admin_roles = {}
 active_pugs = {} #Game: end_time, users
 with open('main/config/servers_and_roles.json') as f:
@@ -74,6 +75,29 @@ with open("main/config/shop.json") as f:
 @client.event
 async def on_ready():
     print("Ready!")
+
+@client.event
+async def on_reaction_add(reaction, user):
+    print("REACTED")
+    msg = reaction.message
+    if msg.channel.id == int(announcement_channel):
+        user_id, tag = user.id, str(user)
+        if not used.at[used.index[used["ID"] == user_id][0], str(msg.id)]: #make sure code has not already been redeemed!
+            index = df.index[df["ID"] == user_id][0]
+            df.Points[index] = df.Points[index] + 10
+            used.at[used.index[used["ID"] == user_id], str(msg.id)] = True #marked redeemed
+        else:
+            print("new user")
+            index = len(df.index)
+            df.loc[len(df.index)] = [user_id, tag, 10]
+            temp  = [user_id]
+            for i in range(len(used.columns) - 1):
+                temp.append(False)
+            used.loc[len(used.index)] = temp
+            used.at[used.index[used["ID"] == user_id], str(msg.id)] = True
+        
+
+
 
 
 @slash.subcommand(
@@ -230,8 +254,10 @@ async def _admin_startPUG(ctx, game: str):
     for current in point_values['events']:
         if current['name'] == game:
             active_pugs[game] = (time.time() + current['duration']*60, [])
+            await ctx.send(f'The {game} PUG has been started. Anyone who joins a voice channel under the {game} category in the next {current["duration"]/60} hours will recieve {current["value"]} points.', hidden=True)
+            break
     else:
-        ctx.send("[ERROR] Could not find event!")
+        await ctx.send("[ERROR] Could not find event!")
 
 
 @slash.subcommand(
@@ -529,25 +555,28 @@ async def expired():
         points_in_circulation[today] = int(df['Points'].sum())
 
         for game in active_pugs.keys(): #LOOK AT CHANNELS
+            print(game)
             for gameDict in point_values['events']:
-                if gameDict == game:
+                if gameDict['name'] == game:
                     channels = client.get_channel(gameDict['id']).voice_channels
                     for channel in channels:
                         for member in channel.members:
                             if member.id not in active_pugs[game][1]:
                                 active_pugs[game][1].append(member.id)
-                                if member.id in df["ID"].values: #returning member
-                                    index = df.index[df["ID"] == member.id][0]
+                            if member.id in df["ID"].values: #returning member
+                                index = df.index[df["ID"] == member.id][0]
+                                if member.id not in active_pugs[game][1]:
                                     df.Points[index] = df.Points[index] + gameDict['value']
-                                    active_pugs[game][1].append(member.id)
-                                else: #new member
-                                    index = len(df.index)
-                                    df.loc[len(df.index)] = [member.id, str(member), gameDict['value']] 
+                                else:
+                                    df.Points[index] = df.Points[index] + 1 #2 points per minute
+                            else: #new member
+                                index = len(df.index)
+                                df.loc[len(df.index)] = [member.id, str(member), gameDict['value']] 
               
             if active_pugs[game][0] < time.time():
                 del active_pugs[game]
                 break
-        print("check points")
+        
         for code in giveaways.keys():
             if giveaways[code][1] + giveaways[code][2] < time.time():
                 #select user here
@@ -602,7 +631,7 @@ async def expired():
 
         with open("main/config/points_in_circulation.pickle", "wb") as f:
             pickle.dump(points_in_circulation, f, protocol=pickle.HIGHEST_PROTOCOL)
-        #requests.get("http://azizs2.web.illinois.edu")
+        requests.get("http://azizs2.web.illinois.edu")
         #requests.get("https://www.google.com/")
         await asyncio.sleep(30)
 

@@ -19,18 +19,16 @@ import pickle
 import os
 from os import path
 import requests
+from collections import defaultdict
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
-df = None
-if path.exists("main/config/points.csv"):
-    df = pd.read_csv("main/config/points.csv")
-else:
-    df = pd.DataFrame(columns=["ID", "Tag", "Points"])
-
-if path.exists("main/config/used.csv"):
-    used = pd.read_csv("main/config/used.csv")
-else:
-    used = pd.DataFrame(columns=["ID"])
+#df = None
+point_d = defaultdict(0)
+if path.exists("main/config/points.pickle"):
+    point_d = pickle.load("main/config/points.pickle")
+used = defaultdict(set)
+if path.exists("main/config/used.pickle"):
+    used = pickle.load("main/config/used.pickle")
 uses_per_day = {} #Date: int (cumulative)
 unique_users_per_day = {} #Date: int (cumulative) len(slash.df.index)
 if path.exists("main/config/unique_users_per_day.pickle") and os.path.getsize("main/config/unique_users_per_day.pickle") > 0:
@@ -68,7 +66,7 @@ for server in servers_and_roles['servers']:
         id = role['id']
         guilds_and_admin_roles[server['id']].append(create_permission(id, SlashCommandPermissionType.ROLE, True))
     guilds_and_admin_roles[server['id']] = [create_permission(x['id'], SlashCommandPermissionType.ROLE, True) for x in server['roles']]
-#guilds_and_admin_roles = {739269285624676429: [create_permission(743208843932074094, SlashCommandPermissionType.ROLE, True)]}
+
 with open("main/config/shop.json") as f:
     shop_info = json.load(f)
 
@@ -78,27 +76,11 @@ async def on_ready():
 
 @client.event
 async def on_reaction_add(reaction, user):
-    print("REACTED")
     msg = reaction.message
-    if msg.channel.id == int(announcement_channel):
-        user_id, tag = user.id, str(user)
-        if not used.at[used.index[used["ID"] == user_id][0], str(msg.id)]: #make sure code has not already been redeemed!
-            index = df.index[df["ID"] == user_id][0]
-            df.Points[index] = df.Points[index] + 10
-            used.at[used.index[used["ID"] == user_id], str(msg.id)] = True #marked redeemed
-        else:
-            print("new user")
-            index = len(df.index)
-            df.loc[len(df.index)] = [user_id, tag, 10]
-            temp  = [user_id]
-            for i in range(len(used.columns) - 1):
-                temp.append(False)
-            used.loc[len(used.index)] = temp
-            used.at[used.index[used["ID"] == user_id], str(msg.id)] = True
-        
-
-
-
+    if msg.channel.id == announcement_channel:
+        if user.id not in used[msg.id]: #make sure code has not already been redeemed!
+            point_d[user.id] += 10
+            used[msg.id].add(user.id)
 
 @slash.subcommand(
     base="admin",
@@ -202,19 +184,12 @@ async def _enterRaffle(ctx, code: str):
     if ctx.author_id in entries:
         await ctx.send("You have already entered this raffle!", hidden=True)
         return
-    points = 0
-    if ctx.author_id in df["ID"].values:
-        index = df.index[df["ID"] == ctx.author_id][0]
-        points = df.Points[index]
-    if cost > points:
-        await ctx.send(cost + " points are required to enter this raffle, you only have " + str(points) + "!")
-        return
-    entries.append(ctx.author_id)
-    if cost != 0:
-        index = df.index[df["ID"] == ctx.author_id][0]
-        #df.Points[index] = df.Points[index] - cost
-        df.at[index, 'Points'] -= cost
-    await ctx.send("You have entered the raffle! You have " + str(df.Points[index]) + " points remaining.", hidden=True)
+    if point_d[ctx.author_id] >= cost:
+        entries.append(ctx.author_id)
+        point_d[ctx.author_id] -= cost
+        await ctx.send(f'You have entered the raffle! You have {point_d[ctx.author_id]} points remaining!', hidden=True)
+    else:
+        await ctx.send(f'{cost} points are required to enter this raffle, you only have {point_d[ctx.author_id]} points!')
 
 
 
@@ -223,16 +198,11 @@ async def _enterRaffle(ctx, code: str):
   description="Returns the user's points"
 )
 async def _points(ctx):
-    #await ctx.send(f"You responded with {argone}.", hidden=True) #can be set to hidden if response shouldn't be public yea?
-    user_id = int(ctx.author_id)
-    points = 0
-    if user_id in df["ID"].values:
-        index = df.index[df["ID"] == user_id][0]
-        points = df.Points[index]
+    points = point_d[ctx.author_id]
     if points == 0:
-        await ctx.send("You have <:OMEGALUL:417825307605860353> points!") 
+        await ctx.send("You have <:OMEGALUL:417825307605860353> points!", hidden=True) 
     else:
-        await ctx.send("You have " + str(points) + " points!")
+        await ctx.send(f'You have {points} points!', hidden=True)
 
 @slash.subcommand(
     base="admin",
@@ -257,7 +227,7 @@ async def _admin_startPUG(ctx, game: str):
             await ctx.send(f'The {game} PUG has been started. Anyone who joins a voice channel under the {game} category in the next {current["duration"]/60} hours will recieve {current["value"]} points.', hidden=True)
             break
     else:
-        await ctx.send("[ERROR] Could not find event!")
+        await ctx.send("[ERROR] Could not find event!", hidden=True)
 
 
 @slash.subcommand(
@@ -296,15 +266,7 @@ async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.
     
     if code not in used.columns:
         active_codes[code] = (amount, time.time(), seconds)
-        temp = []
-        for i in range(len(used.index)):
-            temp.append(False)
-        used[code] = temp
-
-        print(df)
-        print(used)
-        response = code + " of value " + str(amount) + " generated for " + str(length) + " minutes" 
-        await ctx.send(response, hidden=True)
+        await ctx.send(f'{code} of value {amount} generated for {length} minutes', hidden=True)
     else:
         await ctx.send("Could not generate code. Code with same name has already been generated!", hidden=True)
 
@@ -321,52 +283,14 @@ async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.
 )
 
 async def _redeemCode(ctx, code: str):
-    #await ctx.respond(eat=True)
-    #await ctx.send("Redeemed Code!")
-    username = await client.fetch_user(ctx.author_id)
-    user_id = int(ctx.author_id)
     global num_redeemed
-    if code in active_codes.keys() and user_id in df["ID"].values: #valid key AND old user
-
-        if not used.at[used.index[used["ID"] == user_id][0], code]: #make sure code has not already been redeemed!
-            print("old user")
-            index = df.index[df["ID"] == user_id][0]
-            df.Points[index] = df.Points[index] + active_codes[code][0]
-            used.at[used.index[used["ID"] == user_id], code] = True #marked redeemed
-            await ctx.send("Code redeemed, you now have " + str(df.Points[index]) + " points!", hidden=True)
-            num_redeemed += 1
-            date_now = datetime.now().astimezone(timezone('US/Central'))
-            seven_day_redeems.append((df.Tag[index], code, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), active_codes[code][0], date_now.replace(tzinfo=None)))
-            #if len(past_50_uses) > 50:
-            #    del past_50_uses[0]
-            while len(seven_day_redeems) != 0:
-                dt = seven_day_redeems[0][5]
-                now = datetime.now()
-                if (now - dt).days >= 7:
-                    del seven_day_redeems[0]
-                else:
-                    break
-            print(df)
-            print(used)
-        else:
-            await ctx.send("Code already redeemed!", hidden=True)
-
-    elif code in active_codes.keys(): #valid key AND new user
-        print("new user")
-        index = len(df.index)
-        df.loc[len(df.index)] = [user_id, username, active_codes[code][0]]
-        temp  = [user_id]
-        for i in range(len(used.columns) - 1):
-            temp.append(False)
-        
-        used.loc[len(used.index)] = temp
-        used.at[used.index[used["ID"] == user_id], code] = True
-        await ctx.send("Code redeemed, you now have " + str(active_codes[code][0]) + " points!", hidden=True)
+    if code in active_codes.keys() and ctx.author_id not in used[code]: #valid key & user has not already redeemed
+        point_d[ctx.author_id] += active_codes[code][0]
+        used[code].add(ctx.author_id)
+        await ctx.send(f'Code redeemed, you now have {point_d[ctx.author_id]} points!', hidden=True)
         num_redeemed += 1
         date_now = datetime.now().astimezone(timezone('US/Central'))
-        seven_day_redeems.append((df.Tag[index], code, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), active_codes[code][0], date_now.replace(tzinfo=None)))
-        #if len(past_50_uses) > 50:
-        #    del past_50_uses[0]
+        seven_day_redeems.append((str(ctx.author), code, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), active_codes[code][0], date_now.replace(tzinfo=None)))
         while len(seven_day_redeems) != 0:
             dt = seven_day_redeems[0][5]
             now = datetime.now()
@@ -374,12 +298,10 @@ async def _redeemCode(ctx, code: str):
                 del seven_day_redeems[0]
             else:
                 break
-        print(df)
-        print(used)
-    
-    else: #invalid key
+    elif ctx.author_id not in used[code]: #was a valid user
         await ctx.send("Invalid or expired code!", hidden=True)
-
+    else:
+        await ctx.send("Code already redeemed!", hidden=True)
 
 @slash.slash(
     name="leaderboard",
@@ -391,18 +313,14 @@ async def _redeemCode(ctx, code: str):
         required = False
     )]
 )
-async def _leaderboard(ctx, page: typing.Optional[int] = 1): #todo
-    #await ctx.respond()
-    
-    dfcpy = df[['Tag', 'Points']].copy()
-    dfcpy.sort_values('Points')
+async def _leaderboard(ctx, page: typing.Optional[int] = 1):
     em = discord.Embed(title = f'Top members by points in {ctx.guild.name}', description = 'The highest point members in the server')
-    total_pages = math.ceil(len(df.index)/10)
+    total_pages = math.ceil(len(point_d)/10)
     new_page = page
     if new_page > total_pages:
         new_page = total_pages
     
-    for i in range(10*(new_page - 1), min(len(df.index), 10*new_page)):
+    for i in range(10*(new_page - 1), min(len(point_d), 10*new_page)): #TODO, need to iterate via index
         if i < 0:
             break
         temp = dfcpy.Tag[i] + ": " + str(dfcpy.Points[i])
@@ -432,8 +350,8 @@ async def _leaderboard(ctx, page: typing.Optional[int] = 1): #todo
     #base_permissions=guilds_and_admin_roles
 )
 async def _admin_downloadCSV(ctx):
-    with open ("main/config/points.csv", "rb") as file:
-        await ctx.send("Points: ", file=discord.File(file, "points.csv"), hidden=True)
+    with open ("main/config/points.pickle", "rb") as file:
+        await ctx.send("Points: ", file=discord.File(file, "points.pickle"), hidden=True)
 
 @slash.subcommand(
     base = "shop",
@@ -486,19 +404,14 @@ async def _shop_buy(ctx, item: str):
     for product in shop_info['products']:
         if product['name'] == item:
             cost = product['cost']
-            user_id = int(ctx.author_id)
-            points = 0
-            if user_id in df["ID"].values:
-                index = df.index[df["ID"] == user_id][0]
-                points = df.Points[index]
+            points = point_d[ctx.author_id]
             if points >= cost:
-                index = df.index[df["ID"] == user_id][0]
-                df.at[index, 'Points'] -= cost
-                await ctx.send("Congratulations, you have bought a " + product['name']+ "!. Open a ticket under #contact-admins for more information about availability and pickup. You now have " + str(df.Points[index]) + " points.", hidden=True)
-                channel = client.get_channel(int(adminChannelID))
-                await channel.send(str(client.get_user(user_id)) + " has just purchased a " + product['name'] + ".")
+                point_d[ctx.author_id] -= cost
+                await ctx.send(f'Congratulations, you have bought a {product["name"]} !. Open a ticket under #contact-admins for more information about availability and pickup. You now have {point_d[ctx.author_id]} points.', hidden=True)
+                channel = client.get_channel(adminChannelID)
+                await channel.send(f'{ctx.author} has just purchased a {product["name"]}.')
                 date_now = datetime.now().astimezone(timezone('US/Central'))
-                thirty_day_purchase.append((df.Tag[index], item, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), cost, date_now.replace(tzinfo=None)))
+                thirty_day_purchase.append((str(ctx.author), item, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), cost, date_now.replace(tzinfo=None)))
                 while len(thirty_day_purchase) != 0:
                     dt = thirty_day_purchase[0][5]
                     now = datetime.now()
@@ -508,23 +421,19 @@ async def _shop_buy(ctx, item: str):
                         break
                 return
             else:
-                await ctx.send("Sorry, you do not have enough points! " + product['name'] + " costs " + str(product['cost']) + " points and you only have " + str(points) + "points!")
+                #await ctx.send("Sorry, you do not have enough points! " + product['name'] + " costs " + str(product['cost']) + " points and you only have " + str(points) + "points!")
+                await ctx.send(f'Sorry, you do not have enough points! {product["name"]} costs {product["cost"]} points and you only have {points} points!')
                 return
     else:
         for role in shop_info['roles']:
             cost = role['cost']
-            user_id = int(ctx.author_id)
-            points = 0
-            if user_id in df["ID"].values:
-                index = df.index[df["ID"] == user_id][0]
-                points = df.Points[index]
+            points = point_d[ctx.author_id]
             if points >= cost:
-                index = df.index[df["ID"] == user_id][0]
-                df.at[index, 'Points'] -= cost
-                await ctx.send("Congratulations, you have bought a " + role['name']+ "! You now have " + str(df.Points[index]) + " points.", hidden=True)
+                point_d[ctx.author_id] -= cost
+                await ctx.send(f'Congratulations, you have bought a {role["name"]}! You now have {point_d[ctx.author_id]} points.', hidden=True)
                 #APPLY ROLE HERE
                 date_now = datetime.now().astimezone(timezone('US/Central'))
-                thirty_day_purchase.append((df.Tag[index], item, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), cost, date_now.replace(tzinfo=None)))
+                thirty_day_purchase.append((str(ctx.author), item, date_now.strftime("%m/%d/%y"), date_now.strftime("%H:%M:%S"), cost, date_now.replace(tzinfo=None)))
                 while len(thirty_day_purchase) != 0:
                     dt = thirty_day_purchase[0][5]
                     now = datetime.now()
@@ -534,7 +443,7 @@ async def _shop_buy(ctx, item: str):
                         break
                 return
             else:
-                await ctx.send("Sorry, you do not have enough points! " + role['name'] + " costs " + str(role['cost']) + " points and you only have " + str(points) + "points!")
+                await ctx.send(f'Sorry, you do not have enough points! {role["name"]} costs {role["cost"]} points and you only have " {points} points!')
                 return
                 
         else:

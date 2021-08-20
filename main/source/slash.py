@@ -1,3 +1,25 @@
+'''
+Main IERP script
+Attributes
+----------
+client: discord.Client
+    client object from discord.py
+slash: discord_slash.SlashCommand
+    slash object used for discord slash commands
+point_d: defaultdict
+    Default dictionary with default value 0 mapping discord id (int) to points
+used: defaultdict
+    Default dictioanry with default value empty set mapping code/message id to a set of users
+uses_per_day: dictionary
+    Dictionary mapping date (str) to frequency (int)
+unique_users_per_day: dictionary
+    Dictionary mapping date (str) to number of users (int)
+unique_codes_per_day: dictionary
+    Dictionary mapping date (str) to number of codes (int)
+points_in_circulation: dictionary
+    Dictionary mapping date (str) to number of points (int)
+'''
+from main.source.constants import INTEGER, PATH_TO_CIRCULATION, PATH_TO_POINTS, PATH_TO_POINT_VALUES, PATH_TO_SECRETS, PATH_TO_UNIQUE_CODES, PATH_TO_UNIQUE_USERS, PATH_TO_USED, ROLE, STRING, WEBSITE_URL
 import discord
 from discord_slash.utils.manage_commands import create_permission
 from discord_slash.model import SlashCommandPermissionType
@@ -23,29 +45,30 @@ from collections import defaultdict
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 #df = None
-point_d = defaultdict(0)
-if path.exists("main/config/points.pickle"):
-    point_d = pickle.load("main/config/points.pickle")
+point_d = defaultdict(int)
+if path.exists(PATH_TO_POINTS) and os.path.getsize(PATH_TO_POINTS) > 0:
+    with open(PATH_TO_POINTS, "rb") as f:
+        point_d = pickle.load(f)
 used = defaultdict(set)
-if path.exists("main/config/used.pickle"):
-    used = pickle.load("main/config/used.pickle")
+if path.exists(PATH_TO_USED) and os.path.getsize(PATH_TO_USED) > 0:
+    with open(PATH_TO_USED, "rb") as f:
+        used = pickle.load(f)
 uses_per_day = {} #Date: int (cumulative)
-unique_users_per_day = {} #Date: int (cumulative) len(slash.df.index)
-if path.exists("main/config/unique_users_per_day.pickle") and os.path.getsize("main/config/unique_users_per_day.pickle") > 0:
-    with open("main/config/unique_users_per_day.pickle", "rb") as f:
+unique_users_per_day = {} #Date: int (cumulative) len(point_d)
+if path.exists(PATH_TO_UNIQUE_USERS) and os.path.getsize(PATH_TO_UNIQUE_USERS) > 0:
+    with open(PATH_TO_UNIQUE_USERS, "rb") as f:
         unique_users_per_day = pickle.load(f)
         
 unique_codes_per_day = {} #Date: int (cumulative) len(slash.used.columns) - 1
-if path.exists("main/config/unique_codes_per_day.pickle") and os.path.getsize("main/config/unique_codes_per_day.pickle") > 0:
-    with open("main/config/unique_codes_per_day.pickle", "rb") as f:
+if path.exists(PATH_TO_UNIQUE_CODES) and os.path.getsize(PATH_TO_UNIQUE_CODES) > 0:
+    with open(PATH_TO_UNIQUE_CODES, "rb") as f:
         unique_codes_per_day = pickle.load(f)
-
 points_in_circulation = {} #Date: int (cumulative) slash.df['Points'].sum()
-if path.exists("main/config/points_in_circulation.pickle") and os.path.getsize("main/config/points_in_circulation.pickle") > 0:
-    with open("main/config/points_in_circulation.pickle", "rb") as f:
+if path.exists(PATH_TO_CIRCULATION) and os.path.getsize(PATH_TO_CIRCULATION) > 0:
+    with open(PATH_TO_CIRCULATION, "rb") as f:
         points_in_circulation = pickle.load(f)
 
-with open('main/config/point_values.json') as f:
+with open(PATH_TO_POINT_VALUES) as f:
     point_values = json.load(f)
 
 num_redeemed = 0
@@ -53,8 +76,8 @@ active_codes = {} #Code: points, start_time, duration
 giveaways = {} #Code: points, start_time, duration, entries, num_winners
 seven_day_redeems = []
 thirty_day_purchase = []
-adminChannelID = "739269286291439628"
-announcement_channel = "739269286291439628"
+adminChannelID = 739269286291439628
+announcement_channel = 739269286291439628
 guilds_and_admin_roles = {}
 active_pugs = {} #Game: end_time, users
 with open('main/config/servers_and_roles.json') as f:
@@ -69,11 +92,23 @@ for server in servers_and_roles['servers']:
 
 with open("main/config/shop.json") as f:
     shop_info = json.load(f)
-
+'''
+Prints Ready! when Discord client is connected
+'''
 @client.event
 async def on_ready():
     print("Ready!")
 
+'''
+Discord client event called when a message gets a reaction added to it. (This only applies to messages sent after the start of the bot)
+This specific function is designed to award 10 points to a reaction in the announcement channel
+Parameters
+----------
+reaction: discord.Reaction
+    https://discordpy.readthedocs.io/en/stable/api.html#reaction
+user: discord.User
+    https://discordpy.readthedocs.io/en/stable/api.html#id7
+'''
 @client.event
 async def on_reaction_add(reaction, user):
     msg = reaction.message
@@ -92,58 +127,58 @@ async def on_reaction_add(reaction, user):
     options=[manage_commands.create_option(
         name = "code",
         description = "The code of the raffle (keep the code simple)",
-        option_type = 3,
+        option_type = STRING,
         required = True
     ),
     manage_commands.create_option(
         name = "duration",
         description = "Duration of the raffle in hours",
-        option_type = 4,
+        option_type = INTEGER,
         required = True
     ),
     manage_commands.create_option(
         name = "cost",
         description = "Cost of entering the raffle",
-        option_type = 4,
+        option_type = INTEGER,
         required = True
     ),
     manage_commands.create_option(
         name = "number_of_winners",
         description = "The number of winners for the raffle",
-        option_type = 4,
+        option_type = INTEGER,
         required = True
     ),
     manage_commands.create_option(
         name = "announcement_channel",
         description = "The channel to annouce the raffle",
-        option_type = 3,
+        option_type = INTEGER,
         required = False
     ),
     manage_commands.create_option(
         name = "description",
         description = "The description of the giveaway to be included when it is announced",
-        option_type = 3,
+        option_type = STRING,
         required = False
     ),
     manage_commands.create_option(
         name = "image_url",
         description = "Optional image to accompany raffle annoucement",
-        option_type = 3,
+        option_type = STRING,
         required = False
     ),
     manage_commands.create_option(
         name = "role_to_ping",
         description = "Role to ping with the announcement (bot must have permission to ping)",
-        option_type = 8,
+        option_type = ROLE,
         required = False
     )]
 )
-async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int, announcement_channel: typing.Optional[str] = "", description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
+async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int, announcement_channel: typing.Optional[int] = 0, description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
     if code in giveaways.keys():
         await ctx.send("This raffle code is already being used!")
         return
-    giveaways[code] = (cost, time.time(), duration*60, [], number_of_winners, announcement_channel, image_url, role_to_ping)
-    if announcement_channel == "":
+    giveaways[code] = (cost, time.time(), duration*60, set(), number_of_winners, announcement_channel, image_url, role_to_ping)
+    if announcement_channel == 0:
         await ctx.send("Raffle " + code + " has been started!")
         return
     #we announce it
@@ -157,12 +192,11 @@ async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of
     embed.add_field(name = f'Cost: {cost} points', value='Check your points via /points', inline = False)
     if image_url != "":
         embed.set_image(url=image_url)
-    channel = client.get_channel(int(announcement_channel))
+    channel = client.get_channel(announcement_channel)
     if role_to_ping != None:
         await channel.send(f'<@&{role_to_ping.id}>',embed=embed)
     else:
         await channel.send(embed=embed)
-    #await channel.send(embed=embed)
     await ctx.send("Raffle successfully started", hidden=True)
 
 @slash.slash(
@@ -171,7 +205,7 @@ async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of
     options = [manage_commands.create_option(
         name = "code",
         description = "The code of the raffle",
-        option_type = 3,
+        option_type = STRING,
         required = True
     )]
 )
@@ -180,12 +214,11 @@ async def _enterRaffle(ctx, code: str):
         await ctx.send("Invalid code!", hidden=True)
         return
     cost = giveaways[code][0]
-    entries = giveaways[code][3]
-    if ctx.author_id in entries:
+    if ctx.author_id in giveaways[code][3]:
         await ctx.send("You have already entered this raffle!", hidden=True)
         return
     if point_d[ctx.author_id] >= cost:
-        entries.append(ctx.author_id)
+        giveaways[code][3].add(ctx.author_id)
         point_d[ctx.author_id] -= cost
         await ctx.send(f'You have entered the raffle! You have {point_d[ctx.author_id]} points remaining!', hidden=True)
     else:
@@ -214,7 +247,7 @@ async def _points(ctx):
     options=[manage_commands.create_option(
         name = "game",
         description = "Game being played",
-        option_type = 3,
+        option_type = STRING,
         required = True,
         choices=[x['name'] for x in point_values['events']]
     )]
@@ -223,7 +256,7 @@ async def _points(ctx):
 async def _admin_startPUG(ctx, game: str):
     for current in point_values['events']:
         if current['name'] == game:
-            active_pugs[game] = (time.time() + current['duration']*60, [])
+            active_pugs[game] = (time.time() + current['duration']*60, set())
             await ctx.send(f'The {game} PUG has been started. Anyone who joins a voice channel under the {game} category in the next {current["duration"]/60} hours will recieve {current["value"]} points.', hidden=True)
             break
     else:
@@ -240,19 +273,19 @@ async def _admin_startPUG(ctx, game: str):
     options=[manage_commands.create_option(
         name = "length",
         description= "Length of the code in minutes (0 is infinite)",
-        option_type = 4,
+        option_type = INTEGER,
         required = True
     ),
     manage_commands.create_option(
         name = "amount",
         description = "Amount of points this code is worth",
-        option_type = 4,
+        option_type = INTEGER,
         required = True
     ),
     manage_commands.create_option(
         name = "name",
         description = "The custom name for the code",
-        option_type = 3,
+        option_type = STRING,
         required = False
     )]
 )
@@ -277,7 +310,7 @@ async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.
     options=[manage_commands.create_option(
         name = "code",
         description = "The name of the code",
-        option_type = 3,
+        option_type = STRING,
         required = True
     )]
 )
@@ -309,7 +342,7 @@ async def _redeemCode(ctx, code: str):
     options=[manage_commands.create_option(
         name = "page",
         description = "Page number of the leaderboard",
-        option_type = 4,
+        option_type = INTEGER,
         required = False
     )]
 )
@@ -320,17 +353,18 @@ async def _leaderboard(ctx, page: typing.Optional[int] = 1):
     if new_page > total_pages:
         new_page = total_pages
     
-    for i in range(10*(new_page - 1), min(len(point_d), 10*new_page)): #TODO, need to iterate via index
+    sorted_ids = sorted(point_d, key=point_d.get, reverse=True)
+    for i in range(10*(new_page - 1), min(len(point_d), 10*new_page)):
         if i < 0:
             break
-        temp = dfcpy.Tag[i] + ": " + str(dfcpy.Points[i])
+        temp = f'{client.get_user(sorted_ids[i])}: {point_d[sorted_ids[i]]}'
         if i == 0:
             em.add_field(name = f'🥇: {temp} points', value='\u200b', inline = False)
         elif i == 1:
             em.add_field(name = f'🥈: {temp} points', value='\u200b', inline = False)
         elif i == 2:
             em.add_field(name = f'🥉: {temp} points', value='\u200b', inline = False)
-        elif i == len(df.index) - 1:
+        elif i == len(point_d) - 1:
             em.add_field(name = f'<:KEKW:637019720721104896>: {temp} points', value='\u200b', inline = False)
         else:
             em.add_field(name = f'{i+1}: {temp} points', value='\u200b', inline = False)
@@ -350,7 +384,7 @@ async def _leaderboard(ctx, page: typing.Optional[int] = 1):
     #base_permissions=guilds_and_admin_roles
 )
 async def _admin_downloadCSV(ctx):
-    with open ("main/config/points.pickle", "rb") as file:
+    with open (PATH_TO_POINTS, "rb") as file:
         await ctx.send("Points: ", file=discord.File(file, "points.pickle"), hidden=True)
 
 @slash.subcommand(
@@ -394,7 +428,7 @@ for item in shop_info['products']:
     options = [manage_commands.create_option(
         name = "item",
         description = "The name of the item",
-        option_type = 3,
+        option_type = STRING,
         required = True,
         choices=buy_choices
 
@@ -459,28 +493,21 @@ async def expired():
         
         today = date.today().strftime("%m/%d/%y")
         uses_per_day[today] = num_redeemed
-        unique_users_per_day[today] = len(df.index)
-        unique_codes_per_day[today] = len(used.columns) - 1
-        points_in_circulation[today] = int(df['Points'].sum())
+        unique_users_per_day[today] = len(point_d)
+        unique_codes_per_day[today] = len(used)
+        points_in_circulation[today] = sum(point_d.values())
 
         for game in active_pugs.keys(): #LOOK AT CHANNELS
-            print(game)
             for gameDict in point_values['events']:
                 if gameDict['name'] == game:
                     channels = client.get_channel(gameDict['id']).voice_channels
                     for channel in channels:
                         for member in channel.members:
                             if member.id not in active_pugs[game][1]:
-                                active_pugs[game][1].append(member.id)
-                            if member.id in df["ID"].values: #returning member
-                                index = df.index[df["ID"] == member.id][0]
-                                if member.id not in active_pugs[game][1]:
-                                    df.Points[index] = df.Points[index] + gameDict['value']
-                                else:
-                                    df.Points[index] = df.Points[index] + 1 #2 points per minute
-                            else: #new member
-                                index = len(df.index)
-                                df.loc[len(df.index)] = [member.id, str(member), gameDict['value']] 
+                                active_pugs[game][1].add(member.id)
+                                point_d[member.id] += gameDict['value']
+                            else:
+                                point_d[member.id] += 1
               
             if active_pugs[game][0] < time.time():
                 del active_pugs[game]
@@ -492,7 +519,7 @@ async def expired():
                 winners = []
                 #cost, start_time, duration, entries, num_winners = giveaways[code]
                 num_winners = giveaways[code][4]
-                entries = giveaways[code][3]
+                entries = list(giveaways[code][3])
                 i = 0
                 while i < num_winners:
                     if len(entries) == 0:
@@ -505,7 +532,7 @@ async def expired():
                         winners.append(entry)
                         i += 1
                 
-                channel = client.get_channel(int(adminChannelID))
+                channel = client.get_channel(adminChannelID)
                 announcement_channel = client.get_channel(int(giveaways[code][5]))
                 if announcement_channel == "":
                     await channel.send("Winners for the " + code + " giveaway:")
@@ -520,31 +547,29 @@ async def expired():
                 for i in range(len(winners)):
                     embed.add_field(name=str(i+1) + ": " + str(client.get_user(winners[i])), value='\u200b')
                 embed.set_image(url=giveaways[code][6])
-                announcement_channel = client.get_channel(int(giveaways[code][5]))
                 #await announcement_channel.send(embed=embed)
                 role_to_ping = giveaways[code][7]
                 if role_to_ping != None:
-                    await channel.send(f'<@&{role_to_ping.id}>',embed=embed)
+                    await announcement_channel.send(f'<@&{role_to_ping.id}>',embed=embed)
                 else:
-                    await channel.send(embed=embed)
+                    await announcement_channel.send(embed=embed)
                 del giveaways[code]
                 break
         
-        df.to_csv("main/config/points.csv", index=False)
-        used.to_csv("main/config/used.csv", index=False)
-        with open("main/config/unique_users_per_day.pickle", "wb") as f:
+        with open(PATH_TO_USED, "wb") as f:
+            pickle.dump(used, f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(PATH_TO_POINTS, "wb") as f:
+            pickle.dump(point_d, f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(PATH_TO_UNIQUE_USERS, "wb") as f:
             pickle.dump(unique_users_per_day, f, protocol=pickle.HIGHEST_PROTOCOL)
-        
-        with open("main/config/unique_codes_per_day.pickle", "wb") as f:
+        with open(PATH_TO_UNIQUE_CODES, "wb") as f:
             pickle.dump(unique_codes_per_day, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-        with open("main/config/points_in_circulation.pickle", "wb") as f:
+        with open(PATH_TO_CIRCULATION, "wb") as f:
             pickle.dump(points_in_circulation, f, protocol=pickle.HIGHEST_PROTOCOL)
-        requests.get("http://azizs2.web.illinois.edu")
-        #requests.get("https://www.google.com/")
+        requests.get(WEBSITE_URL)
         await asyncio.sleep(30)
 
-with open('main/config/secrets.json') as f:
+with open(PATH_TO_SECRETS) as f:
     secrets = json.load(f)
 TOKEN = secrets['token']
 loop = asyncio.get_event_loop()

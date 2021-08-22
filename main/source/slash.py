@@ -111,12 +111,34 @@ user: discord.User
 '''
 @client.event
 async def on_reaction_add(reaction, user):
+    global num_redeemed
     msg = reaction.message
     if msg.channel.id == announcement_channel:
         if user.id not in used[msg.id]: #make sure code has not already been redeemed!
             point_d[user.id] += 10
             used[msg.id].add(user.id)
-
+            num_redeemed += 1
+'''
+Command that starts a raffle
+Parameters
+----------
+code: str
+    The code of the raffle
+duration: int
+    The duration of the raffle in hours
+cost: int
+    The cost in points to enter the raffle
+number_of_winners: int
+    The number of winners to allow for the raffle. Multiple winners will be outputted in order
+announcement_channel: int [OPTIONAL]
+    The ID of the channel to announce the winners in
+description: str [OPTIONAL]
+    The description of the raffle to be included when the winners are announced
+image_url: str [OPTIONAL]
+    The URL of an image to attatch with the giveaway
+role_to_ping: discord.Role [OPTIONAL]
+    The role to ping when announcing the winners
+'''
 @slash.subcommand(
     base="admin",
     name="startRaffle",
@@ -198,7 +220,13 @@ async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of
     else:
         await channel.send(embed=embed)
     await ctx.send("Raffle successfully started", hidden=True)
-
+'''
+Command that enters the user into a raffle
+Parameters
+----------
+code: str
+    The unique code required in order to enter a raffle
+'''
 @slash.slash(
     name = "enterRaffle",
     description="Enter an ongoing raffle",
@@ -225,7 +253,9 @@ async def _enterRaffle(ctx, code: str):
         await ctx.send(f'{cost} points are required to enter this raffle, you only have {point_d[ctx.author_id]} points!')
 
 
-
+'''
+Command that displays the number of points a user has
+'''
 @slash.slash(
   name="points",
   description="Returns the user's points"
@@ -237,6 +267,13 @@ async def _points(ctx):
     else:
         await ctx.send(f'You have {points} points!', hidden=True)
 
+'''
+Command that starts a Pick Up Game/10/12 man
+Parameters
+----------
+game: str
+    The name of the game being played. This corresponds to the list defined in point_values.json
+'''
 @slash.subcommand(
     base="admin",
     name="startPUG",
@@ -252,7 +289,6 @@ async def _points(ctx):
         choices=[x['name'] for x in point_values['events']]
     )]
 )
-
 async def _admin_startPUG(ctx, game: str):
     for current in point_values['events']:
         if current['name'] == game:
@@ -262,7 +298,17 @@ async def _admin_startPUG(ctx, game: str):
     else:
         await ctx.send("[ERROR] Could not find event!", hidden=True)
 
-
+'''
+Command that creates a redeemable code with a custom duration and point reward. This is used in the case of random events that are not PUGS
+Parameters
+----------
+length: int
+    The duration of the code in minutes (0 is infinite)
+amount: int
+    The amount of points the code is worth
+name: str [OPTIONAL]
+    The name of the code
+'''
 @slash.subcommand(
     base="admin",
     name="customGenerateCode",
@@ -289,7 +335,6 @@ async def _admin_startPUG(ctx, game: str):
         required = False
     )]
 )
-
 async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.Optional[str] = ""):
     seconds = length*60
     code = name
@@ -303,7 +348,13 @@ async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.
     else:
         await ctx.send("Could not generate code. Code with same name has already been generated!", hidden=True)
 
-
+'''
+Command to redeem a custom generated code
+Parameters
+----------
+code: str
+    A unique code generated previously via customGenerateCode
+'''
 @slash.slash(
     name="redeemCode",
     description="Got a IERP code? Redeem it here!",
@@ -314,7 +365,6 @@ async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.
         required = True
     )]
 )
-
 async def _redeemCode(ctx, code: str):
     global num_redeemed
     if code in active_codes.keys() and ctx.author_id not in used[code]: #valid key & user has not already redeemed
@@ -336,6 +386,13 @@ async def _redeemCode(ctx, code: str):
     else:
         await ctx.send("Code already redeemed!", hidden=True)
 
+'''
+Command to view points of all users participating in the rewards program
+Parameters
+----------
+page: int
+    The page of the leaderboard to display. Page 1 displays the top 10 users, while the last page displays the bottom 10 users. Any page number beyond the maximum will display the last page.
+'''
 @slash.slash(
     name="leaderboard",
     description="Displays the top point earners",
@@ -374,7 +431,9 @@ async def _leaderboard(ctx, page: typing.Optional[int] = 1):
     em.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     await ctx.send(embed = em)
 
-  
+'''
+Command to download the CSV file of the users' points TODO
+'''
 @slash.subcommand(
     base="admin",
     name="downloadCSV",
@@ -387,13 +446,15 @@ async def _admin_downloadCSV(ctx):
     with open (PATH_TO_POINTS, "rb") as file:
         await ctx.send("Points: ", file=discord.File(file, "points.pickle"), hidden=True)
 
+'''
+Command to list things available to buy with points. A list of things available is found in servers_and_roles.json
+'''
 @slash.subcommand(
     base = "shop",
     name="list",
     description="Displays what we are currently selling for rewards points!",
     base_description="IERP shop related commands!"
 )
-
 async def _shop_list(ctx):
     embed=discord.Embed(title="IERP Shop", description="The place where you can exchange rewards points for server rewards and merch!", color=0xf58f19)
     embed.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
@@ -419,7 +480,13 @@ for item in shop_info['products']:
         name=item['name'],
         value=item['name']
     ))
-
+'''
+Command to buy something from the shop
+Parameters
+----------
+item: str
+    The item to buy. This item corresponds to an item defined in servers_and_roles.json. Buying a role will permenantly replace the previously bought role if appliciable
+'''
 @slash.subcommand(
     base = "shop",
     name = "buy",
@@ -484,7 +551,11 @@ async def _shop_buy(ctx, item: str):
             await ctx.send("ERROR: item not found, open a ticket under #contact-admins for help", hidden=True)
             return
 
+'''
+Runner function to check for active PUGS, active raffles, active codes, save global variables to files, and ping the server. This occurs once every 30 seconds
+'''
 async def expired():
+    global num_redeemed
     while True:
         for code in active_codes.keys():
             if active_codes[code][1] + active_codes[code][2] < time.time() and active_codes[code][2] != 0:
@@ -506,6 +577,7 @@ async def expired():
                             if member.id not in active_pugs[game][1]:
                                 active_pugs[game][1].add(member.id)
                                 point_d[member.id] += gameDict['value']
+                                num_redeemed += 1
                             else:
                                 point_d[member.id] += 1
               

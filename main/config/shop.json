@@ -3,17 +3,17 @@
       {
         "name": "Blue color role 🟦",
         "role_id": 1,
-        "cost": 250
+        "cost": 999999
       },
       {
         "name": "Yellow color role 🟨",
         "role_id": 2,
-        "cost": 250
+        "cost": 999999
       },
       {
         "name": "Green color role 🟩",
         "role_id": 3,
-        "cost": 250
+        "cost": 999999
       }
     ],
     "products": [

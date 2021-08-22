@@ -19,7 +19,7 @@ unique_codes_per_day: dictionary
 points_in_circulation: dictionary
     Dictionary mapping date (str) to number of points (int)
 '''
-from main.source.constants import INTEGER, PATH_TO_CIRCULATION, PATH_TO_POINTS, PATH_TO_POINT_VALUES, PATH_TO_SECRETS, PATH_TO_UNIQUE_CODES, PATH_TO_UNIQUE_USERS, PATH_TO_USED, ROLE, STRING, WEBSITE_URL
+from main.source.constants import ADMIN_CHANNEL, ANNOUNCEMENT_CHANNEL, INTEGER, PATH_TO_CIRCULATION, PATH_TO_POINTS, PATH_TO_POINT_VALUES, PATH_TO_SECRETS, PATH_TO_UNIQUE_CODES, PATH_TO_UNIQUE_USERS, PATH_TO_USED, ROLE, STRING, WEBSITE_URL
 import discord
 from discord_slash.utils.manage_commands import create_permission
 from discord_slash.model import SlashCommandPermissionType
@@ -76,8 +76,8 @@ active_codes = {} #Code: points, start_time, duration
 giveaways = {} #Code: points, start_time, duration, entries, num_winners
 seven_day_redeems = []
 thirty_day_purchase = []
-adminChannelID = 739269286291439628
-announcement_channel = 739269286291439628
+adminChannelID = ADMIN_CHANNEL
+announcement_channel = ANNOUNCEMENT_CHANNEL
 guilds_and_admin_roles = {}
 active_pugs = {} #Game: end_time, users
 with open('main/config/servers_and_roles.json') as f:
@@ -118,6 +118,36 @@ async def on_reaction_add(reaction, user):
             point_d[user.id] += 10
             used[msg.id].add(user.id)
             num_redeemed += 1
+
+@slash.subcommand(
+    base="admin",
+    name="givePoints",
+    description="Manually give points to a user. Only do this in the case of a single user or some error happened.",
+    base_description="Admin only commands.",
+    base_default_permission=False,
+    options=[manage_commands.create_option(
+        name = "user_id",
+        description = "User ID (not tag) of the user getting points",
+        option_type = STRING,
+        required = True
+    ),
+    manage_commands.create_option(
+        name = "points",
+        description = "Amount of points to give",
+        option_type = INTEGER,
+        required = True
+    )]
+)
+async def admin_givePoints(ctx, user_id: str, points: int):
+    try:
+        user_id = int(user_id)
+    except(ValueError):
+        await ctx.send('Thats not a valid user_id (User ID is a number)', hidden=True)
+        return
+    point_d[user_id] += points
+    await ctx.send("Points successfully awarded!", hidden=True)
+
+
 '''
 Command that starts a raffle
 Parameters
@@ -173,7 +203,7 @@ role_to_ping: discord.Role [OPTIONAL]
     manage_commands.create_option(
         name = "announcement_channel",
         description = "The channel to annouce the raffle",
-        option_type = INTEGER,
+        option_type = STRING,
         required = False
     ),
     manage_commands.create_option(
@@ -195,13 +225,17 @@ role_to_ping: discord.Role [OPTIONAL]
         required = False
     )]
 )
-async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int, announcement_channel: typing.Optional[int] = 0, description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
+async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int, announcement_channel: typing.Optional[str] = '0', description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
     if code in giveaways.keys():
-        await ctx.send("This raffle code is already being used!")
+        await ctx.send("This raffle code is already being used!", hidden=True)
         return
+    try:
+        announcement_channel = int(announcement_channel)
+    except(ValueError):
+        ctx.send('That is not a valid Channel ID (Channel ID is a number)', hidden=True)
     giveaways[code] = (cost, time.time(), duration*60, set(), number_of_winners, announcement_channel, image_url, role_to_ping)
     if announcement_channel == 0:
-        await ctx.send("Raffle " + code + " has been started!")
+        await ctx.send("Raffle " + code + " has been started!", hidden=True)
         return
     #we announce it
     embed=discord.Embed(title=f'Enter now via /enterraffle {code}', color=0xf58f19)
@@ -250,7 +284,7 @@ async def _enterRaffle(ctx, code: str):
         point_d[ctx.author_id] -= cost
         await ctx.send(f'You have entered the raffle! You have {point_d[ctx.author_id]} points remaining!', hidden=True)
     else:
-        await ctx.send(f'{cost} points are required to enter this raffle, you only have {point_d[ctx.author_id]} points!')
+        await ctx.send(f'{cost} points are required to enter this raffle, you only have {point_d[ctx.author_id]} points!', hidden=True)
 
 
 '''
@@ -342,7 +376,7 @@ async def _admin_customGenerateCode(ctx, length: int, amount: int, name: typing.
         letters = string.ascii_letters
         code = ''.join(random.choice(letters) for i in range(8))
     
-    if code not in used.columns:
+    if code not in used.keys():
         active_codes[code] = (amount, time.time(), seconds)
         await ctx.send(f'{code} of value {amount} generated for {length} minutes', hidden=True)
     else:
@@ -404,8 +438,10 @@ page: int
     )]
 )
 async def _leaderboard(ctx, page: typing.Optional[int] = 1):
-    em = discord.Embed(title = f'Top members by points in {ctx.guild.name}', description = 'The highest point members in the server')
     total_pages = math.ceil(len(point_d)/10)
+    if page < 0:
+        page = total_pages
+    em = discord.Embed(title = f'Top members by points in {ctx.guild.name}', description = 'The highest point members in the server')
     new_page = page
     if new_page > total_pages:
         new_page = total_pages
@@ -456,7 +492,7 @@ Command to list things available to buy with points. A list of things available 
     base_description="IERP shop related commands!"
 )
 async def _shop_list(ctx):
-    embed=discord.Embed(title="IERP Shop", description="The place where you can exchange rewards points for server rewards and merch!", color=0xf58f19)
+    embed=discord.Embed(title="IERP Shop", description="The place where you can exchange rewards points for server rewards and merch! Shop is not yet finalized, so stay tuned for more information!", color=0xf58f19)
     embed.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     embed.set_thumbnail(url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     embed.add_field(name="COLOR ROLES", value='\u200b', inline=False)
@@ -523,7 +559,7 @@ async def _shop_buy(ctx, item: str):
                 return
             else:
                 #await ctx.send("Sorry, you do not have enough points! " + product['name'] + " costs " + str(product['cost']) + " points and you only have " + str(points) + "points!")
-                await ctx.send(f'Sorry, you do not have enough points! {product["name"]} costs {product["cost"]} points and you only have {points} points!')
+                await ctx.send(f'Sorry, you do not have enough points! {product["name"]} costs {product["cost"]} points and you only have {points} points!', hidden=True)
                 return
     else:
         for role in shop_info['roles']:
@@ -544,7 +580,7 @@ async def _shop_buy(ctx, item: str):
                         break
                 return
             else:
-                await ctx.send(f'Sorry, you do not have enough points! {role["name"]} costs {role["cost"]} points and you only have " {points} points!')
+                await ctx.send(f'Sorry, you do not have enough points! {role["name"]} costs {role["cost"]} points and you only have {points} points!', hidden=True)
                 return
                 
         else:

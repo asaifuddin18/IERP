@@ -18,3 +18,4 @@ WEBSITE_URL = "http://illiniesportsrp.web.illinois.edu/"
 PATH_TO_SECRETS = "main/config/secrets.json"
 ADMIN_CHANNEL = 878864714405388329
 ANNOUNCEMENT_CHANNEL = 212442170492190720
+#ANNOUNCEMENT_CHANNEL = 739269286291439628 test channel (general)

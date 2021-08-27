@@ -47,7 +47,10 @@ from discord_slash.model import ButtonStyle
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 #df = None
-point_d = defaultdict(int)
+def default_point():
+    return 100
+point_d = defaultdict(default_point)
+temp = {}
 if path.exists(PATH_TO_POINTS) and os.path.getsize(PATH_TO_POINTS) > 0:
     with open(PATH_TO_POINTS, "rb") as f:
         point_d = pickle.load(f)
@@ -82,6 +85,8 @@ adminChannelID = ADMIN_CHANNEL
 announcement_channel = ANNOUNCEMENT_CHANNEL
 guilds_and_admin_roles = {}
 active_pugs = {} #Game: end_time, users
+weekly_user_events = {}
+yesterday = 6 #sunday
 with open('main/config/servers_and_roles.json') as f:
     servers_and_roles = json.load(f)
 
@@ -115,7 +120,7 @@ user: discord.User
 async def on_reaction_add(reaction, user):
     global num_redeemed
     msg = reaction.message
-    if msg.channel.id == announcement_channel:
+    if msg.channel.id == announcement_channel and (msg.mention_everyone or 'Student' in [r.name for r in msg.role_mentions]):
         if user.id not in used[msg.id]: #make sure code has not already been redeemed!
             point_d[user.id] += 5
             used[msg.id].add(user.id)
@@ -440,6 +445,9 @@ page: int
     )]
 )
 async def _leaderboard(ctx, page: typing.Optional[int] = 1):
+    if len(point_d) == 0:
+        await ctx.send("Nobody is on the leaderboard yet!")
+        return
     em = create_leaderboard_embed(page)
     buttons = [create_button(style=ButtonStyle.red, label="Previous page", custom_id = 'previous_page'), create_button(style=ButtonStyle.green, label="Next page", custom_id = 'next_page')]
     await ctx.send(embed = em, components=[create_actionrow(*buttons)])
@@ -457,17 +465,17 @@ def create_leaderboard_embed(page: int):
     for i in range(10*(page - 1), min(len(point_d), 10*page)):
         if i < 0:
             break
-        temp = f'{client.get_user(sorted_ids[i])}: {point_d[sorted_ids[i]]}'
+        temp = f'{client.get_user(sorted_ids[i])}: **{point_d[sorted_ids[i]]}'
         if i == 0:
-            embed_str += f'**🥇: {temp} points**\n'
+            embed_str += f'🥇: {temp} points**\n'
         elif i == 1:
-            embed_str += f'**🥈: {temp} points**\n'
+            embed_str += f'🥈: {temp} points**\n'
         elif i == 2:
-            embed_str += f'**🥉: {temp} points**\n'
+            embed_str += f'🥉: {temp} points**\n'
         elif i == len(point_d) - 1:
-            embed_str += f'**<:KEKW:637019720721104896>: {temp} points**'
+            embed_str += f'<:KEKW:637019720721104896>: {temp} points**'
         else:
-            embed_str += f'**{i+1}: {temp} points**\n'
+            embed_str += f'{i+1}: {temp} points**\n'
     em.add_field(name='\u200b', value=embed_str, inline = False)
     em.set_footer(text=f'Page {page}/{total_pages}')
     em.timestamp = datetime.today()
@@ -621,7 +629,12 @@ Runner function to check for active PUGS, active raffles, active codes, save glo
 '''
 async def expired():
     global num_redeemed
+    global yesterday
     while True:
+        if yesterday == 6 and datetime.today().weekday() == 0: #weekly reset
+            weekly_user_events.clear()
+        yesterday = datetime.today().weekday()
+
         for code in active_codes.keys():
             if active_codes[code][1] + active_codes[code][2] < time.time() and active_codes[code][2] != 0:
                 del active_codes[code]
@@ -639,12 +652,16 @@ async def expired():
                     channels = client.get_channel(gameDict['id']).voice_channels
                     for channel in channels:
                         for member in channel.members:
-                            if member.id not in active_pugs[game][1]:
+                            if member.id not in active_pugs[game][1]: #not in current activity, eligible
                                 active_pugs[game][1].add(member.id)
-                                point_d[member.id] += gameDict['value']
-                                num_redeemed += 1
-                            else:
-                                point_d[member.id] += 1
+                                if member.id not in weekly_user_events: #first activity of the week
+                                    weekly_user_events[member.id] = 15
+                                    point_d[member.id] += 15
+                                    num_redeemed += 1
+                                else: #not first activity of the week
+                                    weekly_user_events[member.id] += 5
+                                    point_d[member.id] += 5
+                                    num_redeemed += 1
               
             if active_pugs[game][0] < time.time():
                 del active_pugs[game]
@@ -712,5 +729,4 @@ TOKEN = secrets['token']
 loop = asyncio.get_event_loop()
 loop.create_task(client.start(TOKEN))
 loop.create_task(expired())
-#loop.run_forever()
 Thread(target=loop.run_forever).start() #is this preferred?

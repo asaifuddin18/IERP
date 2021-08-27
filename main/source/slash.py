@@ -42,6 +42,8 @@ import os
 from os import path
 import requests
 from collections import defaultdict
+from discord_slash.utils.manage_components import create_button, create_actionrow
+from discord_slash.model import ButtonStyle
 client = discord.Client(intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 #df = None
@@ -115,7 +117,7 @@ async def on_reaction_add(reaction, user):
     msg = reaction.message
     if msg.channel.id == announcement_channel:
         if user.id not in used[msg.id]: #make sure code has not already been redeemed!
-            point_d[user.id] += 10
+            point_d[user.id] += 5
             used[msg.id].add(user.id)
             num_redeemed += 1
 
@@ -438,35 +440,62 @@ page: int
     )]
 )
 async def _leaderboard(ctx, page: typing.Optional[int] = 1):
+    em = create_leaderboard_embed(page)
+    buttons = [create_button(style=ButtonStyle.red, label="Previous page", custom_id = 'previous_page'), create_button(style=ButtonStyle.green, label="Next page", custom_id = 'next_page')]
+    await ctx.send(embed = em, components=[create_actionrow(*buttons)])
+
+def create_leaderboard_embed(page: int):
     total_pages = math.ceil(len(point_d)/10)
-    if page < 0:
+    if page < 1:
+        page = 1
+    em = discord.Embed(title = f'Top members by points in Illini Esports', description = 'The highest point members in the server')
+    if page > total_pages:
         page = total_pages
-    em = discord.Embed(title = f'Top members by points in {ctx.guild.name}', description = 'The highest point members in the server')
-    new_page = page
-    if new_page > total_pages:
-        new_page = total_pages
     
     sorted_ids = sorted(point_d, key=point_d.get, reverse=True)
-    for i in range(10*(new_page - 1), min(len(point_d), 10*new_page)):
+    embed_str = ""
+    for i in range(10*(page - 1), min(len(point_d), 10*page)):
         if i < 0:
             break
         temp = f'{client.get_user(sorted_ids[i])}: {point_d[sorted_ids[i]]}'
         if i == 0:
-            em.add_field(name = f'🥇: {temp} points', value='\u200b', inline = False)
+            embed_str += f'**🥇: {temp} points**\n'
         elif i == 1:
-            em.add_field(name = f'🥈: {temp} points', value='\u200b', inline = False)
+            embed_str += f'**🥈: {temp} points**\n'
         elif i == 2:
-            em.add_field(name = f'🥉: {temp} points', value='\u200b', inline = False)
+            embed_str += f'**🥉: {temp} points**\n'
         elif i == len(point_d) - 1:
-            em.add_field(name = f'<:KEKW:637019720721104896>: {temp} points', value='\u200b', inline = False)
+            embed_str += f'**<:KEKW:637019720721104896>: {temp} points**'
         else:
-            em.add_field(name = f'{i+1}: {temp} points', value='\u200b', inline = False)
-    #em.set_footer(text="Page " + str(new_page) + "/" + str(total_pages))
-    em.set_footer(text=f'Page {new_page}/{total_pages}')
+            embed_str += f'**{i+1}: {temp} points**\n'
+    em.add_field(name='\u200b', value=embed_str, inline = False)
+    em.set_footer(text=f'Page {page}/{total_pages}')
+    em.timestamp = datetime.today()
     em.set_thumbnail(url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
     em.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
-    await ctx.send(embed = em)
+    return em
 
+@slash.component_callback()
+async def previous_page(ctx):
+    try:
+        footer = str(ctx.origin_message.embeds[0].footer.text)
+    except:
+        await ctx.edit_origin(embed = create_leaderboard_embed(1))
+        return
+    page = int(footer[5:footer.index('/')])
+    em = create_leaderboard_embed(page - 1)
+    await ctx.edit_origin(embed = create_leaderboard_embed(page - 1))
+
+@slash.component_callback()
+async def next_page(ctx):
+    try:
+        footer = str(ctx.origin_message.embeds[0].footer.text)
+    except:
+        await ctx.edit_origin(embed = create_leaderboard_embed(1))
+        return
+    page = int(footer[5:footer.index('/')])
+    em = create_leaderboard_embed(page + 1)
+    await ctx.edit_origin(embed = create_leaderboard_embed(page + 1))
 '''
 Command to download the CSV file of the users' points TODO
 '''

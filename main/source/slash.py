@@ -50,7 +50,6 @@ slash = SlashCommand(client, sync_commands=True)
 def default_point():
     return 100
 point_d = defaultdict(default_point)
-temp = {}
 if path.exists(PATH_TO_POINTS) and os.path.getsize(PATH_TO_POINTS) > 0:
     with open(PATH_TO_POINTS, "rb") as f:
         point_d = pickle.load(f)
@@ -91,10 +90,6 @@ with open('main/config/servers_and_roles.json') as f:
     servers_and_roles = json.load(f)
 
 for server in servers_and_roles['servers']:
-    guilds_and_admin_roles[server['id']] = []
-    for role in server['roles']:
-        id = role['id']
-        guilds_and_admin_roles[server['id']].append(create_permission(id, SlashCommandPermissionType.ROLE, True))
     guilds_and_admin_roles[server['id']] = [create_permission(x['id'], SlashCommandPermissionType.ROLE, True) for x in server['roles']]
 
 with open("main/config/shop.json") as f:
@@ -184,14 +179,14 @@ role_to_ping: discord.Role [OPTIONAL]
     base_default_permission=False,
     base_permissions=guilds_and_admin_roles,
     options=[manage_commands.create_option(
-        name = "code",
-        description = "The code of the raffle (keep the code simple)",
+        name = "name",
+        description = "Name of the raffle",
         option_type = STRING,
         required = True
     ),
     manage_commands.create_option(
         name = "duration",
-        description = "Duration of the raffle in hours",
+        description = "Duration of the raffle in minutes",
         option_type = INTEGER,
         required = True
     ),
@@ -206,12 +201,6 @@ role_to_ping: discord.Role [OPTIONAL]
         description = "The number of winners for the raffle",
         option_type = INTEGER,
         required = True
-    ),
-    manage_commands.create_option(
-        name = "announcement_channel",
-        description = "The channel to annouce the raffle",
-        option_type = STRING,
-        required = False
     ),
     manage_commands.create_option(
         name = "description",
@@ -232,20 +221,9 @@ role_to_ping: discord.Role [OPTIONAL]
         required = False
     )]
 )
-async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of_winners: int, announcement_channel: typing.Optional[str] = '0', description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
-    if code in giveaways.keys():
-        await ctx.send("This raffle code is already being used!", hidden=True)
-        return
-    try:
-        announcement_channel = int(announcement_channel)
-    except(ValueError):
-        ctx.send('That is not a valid Channel ID (Channel ID is a number)', hidden=True)
-    giveaways[code] = (cost, time.time(), duration*60, set(), number_of_winners, announcement_channel, image_url, role_to_ping)
-    if announcement_channel == 0:
-        await ctx.send("Raffle " + code + " has been started!", hidden=True)
-        return
-    #we announce it
-    embed=discord.Embed(title=f'Enter now via /enterraffle {code}', color=0xf58f19)
+async def _admin_startRaffle(ctx, name: str, duration: int, cost: int, number_of_winners: int, description: typing.Optional[str] = "", image_url: typing.Optional[str] = "", role_to_ping: typing.Optional[discord.Role] = None):
+    announcement_channel = ctx.channel.id
+    embed=discord.Embed(title=f'Enter now via the button! {name}', color=0xf58f19)
     if description != "":
         embed.description = description
     embed.set_author(name="Raffle has started!", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
@@ -255,12 +233,33 @@ async def _admin_startRaffle(ctx, code: str, duration: int, cost: int, number_of
     embed.add_field(name = f'Cost: {cost} points', value='Check your points via /points', inline = False)
     if image_url != "":
         embed.set_image(url=image_url)
-    channel = client.get_channel(announcement_channel)
+    channel = ctx.channel
+    buttons = [create_button(style=ButtonStyle.green, label="Enter Raffle", custom_id = 'raffle')]
+    action_row = create_actionrow(*buttons)
+    msg = None
     if role_to_ping != None:
-        await channel.send(f'<@&{role_to_ping.id}>',embed=embed)
+        msg = await channel.send(f'<@&{role_to_ping.id}>', embed=embed, components=[action_row]) #something wrong with his and @everyone
     else:
-        await channel.send(embed=embed)
+        msg = await channel.send(embed=embed, components=[action_row])
+    giveaways[msg.id] = (cost, time.time(), duration*60, set(), number_of_winners, announcement_channel, image_url, role_to_ping, name)
     await ctx.send("Raffle successfully started", hidden=True)
+
+@slash.component_callback()
+async def raffle(ctx):
+    print(ctx.author_id)
+    if ctx.origin_message_id in giveaways:
+        if ctx.author_id not in giveaways[ctx.origin_message_id][3]:
+            if point_d[ctx.author_id] >= giveaways[ctx.origin_message_id][0]:
+                giveaways[ctx.origin_message_id][3].add(ctx.author_id)
+                point_d[ctx.author_id] -= giveaways[ctx.origin_message_id][0]
+                await ctx.send("You have entered the raffle!", hidden=True)
+            else:
+                await ctx.send("You do not have enough points for this raffle!", hidden=True)
+        else:
+            await ctx.send("You have already entered this raffle!", hidden=True)
+    else:
+        await ctx.send("Raffle expired!", hidden=True)
+    #await ctx.edit_origin(embed = create_leaderboard_embed(page - 1))
 '''
 Command that enters the user into a raffle
 Parameters
@@ -689,13 +688,13 @@ async def expired():
                 channel = client.get_channel(adminChannelID)
                 announcement_channel = client.get_channel(int(giveaways[code][5]))
                 if announcement_channel == "":
-                    await channel.send("Winners for the " + code + " giveaway:")
+                    await channel.send("Winners for the " + giveaways[8] + " giveaway:")
                     for i in range(len(winners)):
                         await channel.send(str(i + 1) + ". " + str(client.get_user(winners[i])))
                     del giveaways[code]
                     continue
                 
-                embed=discord.Embed(title=f'{code} Raffle Winners!', description="If there are multiple winners, each will choose a prize in the order listed. Contact admins under #contact-admin to receive your prize!", color=0xf58f19)
+                embed=discord.Embed(title=f'{giveaways[code][8]} Raffle Winners!', description="If there are multiple winners, each will choose a prize in the order listed. Contact admins under #contact-admin to receive your prize!", color=0xf58f19)
                 embed.set_author(name="IERP", icon_url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
                 embed.set_thumbnail(url="https://pbs.twimg.com/profile_images/1378045236845412355/TjjZcbbu_400x400.jpg")
                 for i in range(len(winners)):

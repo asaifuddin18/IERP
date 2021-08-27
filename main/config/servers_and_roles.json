@@ -9,40 +9,6 @@
                     "id": 743208843932074094
                 }
             ] 
-        },
-        {
-            "name": "ie_main",
-            "id": 212435931766980609,
-            "roles": [
-                {
-                    "name": "president",
-                    "id": 590406972931702784
-                },
-                {
-                    "name": "director",
-                    "id": 590407514206634003
-                },
-                {
-                    "name": "moderator",
-                    "id": 637772349361618993
-                },
-                {
-                    "name": "community_coordinator",
-                    "id": 363829120809041920
-                },
-                {
-                    "name": "competitive_coordinator",
-                    "id": 487297199261089812
-                },
-                {
-                    "name": "event_logistics",
-                    "id": 682436860433399813
-                },
-                {
-                    "name": "social gaming director",
-                    "id": 590754279590068224
-                }
-            ]
         }
     ]
 }

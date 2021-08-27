@@ -15,3 +15,10 @@ and add:
 	    asyncio.set_event_loop(self.loop)
     else:
     self.loop = loop
+
+
+
+### TODO
+Implement buttons in giveaway
+#Make sure a PUG cannot be started again if its running
+Save weekly reset info
